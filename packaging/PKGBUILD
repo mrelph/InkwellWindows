@@ -1,0 +1,92 @@
+# Maintainer: Mark Relph
+#
+# NOTE (electron version): Arch pins Electron apps to a specific major rather
+# than the floating `electron` meta-package (obsidian and element-desktop use
+# electron43, code uses electron42), because the meta-package Provides nothing
+# and simply depends on the current major. $_electron below is the single source
+# of truth: it drives both depends=() and the installed launcher. Bumping
+# Electron means changing that one line, rebuilding, and re-testing.
+
+# NOTE (package name): the AUR already carries `inkwell-bin`, an unrelated
+# proprietary Tauri editor that also calls itself Inkwell and declares
+# provides=('inkwell'), so the bare name is effectively spoken for. This package
+# takes a distinct one. $_appname stays `inkwell` throughout: the binary, the
+# app directory, the icon and the desktop entry all keep that name, and
+# StartupWMClass has to match the Wayland app_id exactly or window and icon
+# association breaks.
+pkgname=inkwell-omarchy
+_appname=inkwell
+pkgver=0.1.4
+pkgrel=1
+pkgdesc="A calm, local-first Markdown reader and editor for Linux"
+arch=('any')
+url="https://github.com/mrelph/inkwell"
+license=('MIT')
+_electron=electron43
+depends=("${_electron}" 'hicolor-icon-theme')
+makedepends=('pnpm' 'nodejs')
+# Both ship /usr/bin/inkwell. Declaring the conflict makes pacman refuse the
+# transaction with a readable reason instead of failing on a file collision
+# partway through; it matches inkwell-bin's own provides=('inkwell').
+conflicts=('inkwell')
+source=("${_appname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('af7adcffa708ca70bc533612b90f32d63e1b7445dfa18934c36aa120fb52e0c0')
+
+build() {
+  cd "${srcdir}/${_appname}-${pkgver}"
+
+  # pnpm needs a writable home/store dir inside the build sandbox.
+  export HOME="${srcdir}"
+  export npm_config_store_dir="${srcdir}/.pnpm-store"
+
+  # The `electron` devDependency exists only for its TypeScript types; the
+  # packaged app execs the *system* electron. Skip its ~100MB postinstall
+  # binary download, which would otherwise be fetched and then never used.
+  export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+
+  # pnpm 11 fails the install outright when a dependency has a build script it
+  # has not been told about, and esbuild (via vite) has one. The flag that used
+  # to answer this (--allow-build) is gone, so the decision is declared in a
+  # workspace file instead. Skipping it is safe: the script only relinks the
+  # platform binary that @esbuild/linux-x64 already ships.
+  cat > pnpm-workspace.yaml <<'YAML'
+allowBuilds:
+  esbuild: false
+YAML
+
+  pnpm install --frozen-lockfile
+  pnpm build
+}
+
+package() {
+  cd "${srcdir}/${_appname}-${pkgver}"
+
+  install -d "${pkgdir}/usr/lib/${_appname}"
+  cp -r dist "${pkgdir}/usr/lib/${_appname}/dist"
+  cp -r dist-electron "${pkgdir}/usr/lib/${_appname}/dist-electron"
+  install -Dm644 package.json "${pkgdir}/usr/lib/${_appname}/package.json"
+
+  # Normalize permissions on the copied trees: directories 755, files 644.
+  find "${pkgdir}/usr/lib/${_appname}/dist" "${pkgdir}/usr/lib/${_appname}/dist-electron" \
+    -type d -exec chmod 755 {} \;
+  find "${pkgdir}/usr/lib/${_appname}/dist" "${pkgdir}/usr/lib/${_appname}/dist-electron" \
+    -type f -exec chmod 644 {} \;
+
+  # Launcher: exec the system Electron against the installed app directory,
+  # forwarding all arguments so `inkwell notes.md` opens that file.
+  install -d "${pkgdir}/usr/bin"
+  cat > "${pkgdir}/usr/bin/${_appname}" <<'EOF'
+#!/bin/bash
+# Exec the system Electron against the installed app, forwarding arguments so
+# `inkwell notes.md` opens that file. The binary is pinned by the PKGBUILD's
+# $_electron and guaranteed present by depends=().
+exec @ELECTRON@ /usr/lib/inkwell "$@"
+EOF
+  sed -i "s|@ELECTRON@|${_electron}|" "${pkgdir}/usr/bin/${_appname}"
+  chmod 755 "${pkgdir}/usr/bin/${_appname}"
+
+  install -Dm644 packaging/inkwell.desktop "${pkgdir}/usr/share/applications/${_appname}.desktop"
+  install -Dm644 build/icon.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/${_appname}.png"
+  install -Dm644 build/icon.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/${_appname}.svg"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

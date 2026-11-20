@@ -1,0 +1,91 @@
+{
+  "name": "inkwell-windows",
+  "version": "0.1.4",
+  "description": "A calm, local-first Markdown reader and editor for Windows.",
+  "author": "Mark Relph",
+  "license": "MIT",
+  "main": "dist-electron/main.js",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"tsc -p tsconfig.electron.json --watch\" \"vite --host 127.0.0.1\" \"wait-on tcp:5173 file:dist-electron/main.js && electron . --dev-server=http://127.0.0.1:5173\"",
+    "build": "tsc -p tsconfig.electron.json && vite build",
+    "preview": "corepack pnpm build && electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "package:windows": "corepack pnpm build && electron-builder --win nsis --x64",
+    "package:windows:arm64": "corepack pnpm build && electron-builder --win nsis --arm64",
+    "package:windows:portable": "corepack pnpm build && electron-builder --win portable --x64",
+    "package:linux": "corepack pnpm build && electron-builder --linux AppImage"
+  },
+  "build": {
+    "appId": "com.inkwell.desktop",
+    "productName": "Inkwell",
+    "executableName": "inkwell",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["md", "mdx", "markdown"],
+        "name": "Markdown document",
+        "description": "Markdown document",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Inkwell"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "build/icon.png",
+      "category": "Utility;TextEditor;",
+      "synopsis": "Local-first Markdown reader and editor",
+      "maintainer": "Mark Relph",
+      "mimeTypes": ["text/markdown", "text/x-markdown"],
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "inkwell",
+          "Keywords": "markdown;md;editor;notes;writing;"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.6",
+    "@fontsource/source-serif-4": "^5.2.6",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.0.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "electron": "^43.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "wait-on": "^8.0.1"
+  }
+}

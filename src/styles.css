@@ -1,0 +1,1053 @@
+/* Inkwell — see THEMING.md for the token contract and DESIGN.md for everything
+   that is not color. No raw color literals below the :root block: every colour
+   resolves to a token so an Omarchy theme change repaints the app wholesale.
+   The values here are the DESIGN.md default palette, used verbatim when Inkwell
+   runs off Omarchy and as the pre-injection paint to avoid a flash. */
+:root {
+  --surface-reader: #fbf8f1;
+  --surface-panel: #e9e2d6;
+  --surface-canvas: #e8e1d5;
+  --surface-chrome: #f7f3ec;
+  --surface-raised: #f9f5ed;
+  --surface-code: #1d2d33;
+
+  --text-primary: #1c2b31;
+  --text-secondary: #3a4c4d;
+  --text-muted: #6b6459;
+  --text-inverse: #fbf8f1;
+
+  --line-hairline: #d7cfc2;
+  --line-strong: #c6bba9;
+
+  --accent: #1b6366;
+  --accent-hover: #217276;
+  --accent-contrast: #f6f5ee;
+  --accent-tint: rgba(27, 99, 102, 0.1);
+  --accent-ring: #167b81;
+
+  --caret: #e56d40;
+  --selection-bg: #b9e1db;
+  --selection-text: #102024;
+
+  --font-reader: 'Source Serif 4', Georgia, serif;
+
+  /* Tracks .document-header's height so the compact outline can overlay the
+     canvas without covering the header's actions. */
+  --header-h: 52px;
+
+  color-scheme: light;
+  color: var(--text-primary);
+  background: var(--surface-canvas);
+  font-family: 'Manrope Variable', Manrope, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+:root[data-theme-mode='dark'] { color-scheme: dark; }
+:root[data-reader-font='classic'] { --font-reader: Georgia, 'Times New Roman', serif; }
+:root[data-reader-font='sans'] { --font-reader: 'Manrope Variable', Manrope, sans-serif; }
+:root[data-reader-font='system'] { --font-reader: system-ui, sans-serif; }
+:root[data-reader-font='mono'] { --font-reader: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; }
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body { overflow: hidden; }
+
+button, input, textarea { font: inherit; }
+
+button { color: inherit; }
+
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+::selection { background: var(--selection-bg); color: var(--selection-text); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--text-muted); }
+
+/* The compositor owns the window frame: Hyprland draws the border and the
+   title, so Inkwell ships no titlebar of its own. Three regions, one row.
+
+   grid-template-columns is declared exactly ONCE, here. Panel widths are custom
+   properties so breakpoints and collapse state compose instead of competing —
+   see the cascade note at the end of this file before changing either. */
+.app-shell {
+  --col-sidebar: 250px;
+  --col-outline: 220px;
+  display: grid;
+  grid-template-columns: var(--col-sidebar) minmax(0, 1fr) var(--col-outline);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-canvas);
+}
+
+.icon-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.icon-button:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-chrome) 82%, var(--text-primary));
+}
+
+/* An inert control has to look inert. Hover feedback on a disabled button
+   reads as a click that failed rather than as "not right now". */
+.icon-button:disabled { opacity: .4; cursor: default; }
+.icon-button:disabled:hover { color: var(--text-muted); background: transparent; }
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 11px 11px;
+  overflow: hidden;
+  background: var(--surface-panel);
+  border-right: 1px solid var(--line-hairline);
+  transition: opacity 180ms ease;
+}
+
+.sidebar-actions { display: flex; gap: 5px; margin-bottom: 12px; }
+
+.new-note {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px;
+  cursor: pointer;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: -.01em;
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+
+.new-note:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  transform: translateY(-1px);
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 9px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-reader) 55%, transparent);
+  border: 1px solid var(--line-hairline);
+  border-radius: 9px;
+}
+
+.search-box:focus-within {
+  background: var(--surface-reader);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.search-box input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 12px;
+}
+
+.search-box input::placeholder { color: var(--text-muted); }
+
+.clear-search {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+
+.clear-search:hover { color: var(--text-primary); background: var(--surface-raised); }
+
+/* One scroller for the whole library, so group headings scroll with their rows
+   instead of each group scrolling inside itself. */
+.library-scroll { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; padding: 0 1px; }
+
+.library-group { display: flex; flex-direction: column; }
+
+.library-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 11px 5px 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 740;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.group-count { flex: none; padding: 0 2px; font-variant-numeric: tabular-nums; }
+
+/* Source-level actions. Revealed on hover like the row menu, but always
+   reachable by keyboard — a control that is inert until hover is not a
+   control. */
+.group-action {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  transition: opacity 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+
+.library-label:hover .group-action,
+.group-action:focus-visible { opacity: 1; }
+.group-action:hover { color: var(--text-primary); background: var(--surface-raised); }
+
+/* The chevron used to be decoration on a span; it now genuinely collapses the
+   list, because an affordance that looks interactive has to be interactive. */
+.folder-line {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 2px 2px 2px 0;
+  cursor: pointer;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+}
+
+.folder-line span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.folder-line:hover { color: var(--text-primary); }
+.folder-line svg { flex: none; transition: transform 140ms ease; }
+.folder-line[aria-expanded='false'] svg { transform: rotate(-90deg); }
+
+.document-list { display: flex; flex-direction: column; gap: 2px; }
+
+/* A row is a button plus its own close control, so the row is a positioned
+   wrapper rather than a single button (a button cannot nest a button). */
+.document-row { position: relative; display: flex; align-items: stretch; }
+
+.document-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  width: 100%;
+  padding: 8px 26px 8px 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+/* One control per row, not two. A single menu says what each action is; the
+   bare X that used to sit here read as "delete" when it only closed. */
+.row-menu-button {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  transform: translateY(-50%);
+  cursor: pointer;
+  opacity: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  transition: opacity 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+
+.document-row:hover .row-menu-button,
+.row-menu-button:focus-visible { opacity: 1; }
+.row-menu-button:hover { color: var(--text-primary); background: var(--surface-raised); }
+
+/* A recent file remembered from an earlier session, not yet read back in. */
+.document-row.unopened .document-item strong { font-weight: 580; }
+.document-row.unopened .document-item > svg { opacity: .6; }
+
+.rename-form { display: flex; width: 100%; padding: 2px 1px; }
+
+.rename-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  background: var(--surface-reader);
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--accent-tint);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+/* Fixed to the viewport: the library scrolls, and a menu that scrolls with it
+   drifts away from the pointer. Clamped into the window by RowMenu, because a
+   tiled Inkwell can be small enough that an unclamped menu opens off-screen. */
+.row-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 202px;
+  padding: 5px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--text-primary) 26%, transparent);
+}
+
+.row-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.row-menu button svg { flex: none; color: var(--text-muted); }
+.row-menu button:hover { color: var(--text-primary); background: var(--accent-tint); }
+.row-menu button:hover svg { color: var(--accent); }
+.row-menu button.separated { margin-top: 5px; border-top: 1px solid var(--line-hairline); padding-top: 10px; }
+.row-menu button.danger { color: var(--caret); }
+.row-menu button.danger svg { color: var(--caret); }
+.row-menu button.danger:hover {
+  color: var(--caret);
+  background: color-mix(in srgb, var(--caret) 14%, transparent);
+}
+
+.empty-library { padding: 10px 8px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+
+.document-item:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-panel) 80%, var(--surface-reader));
+}
+
+.document-item.active {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border-color: var(--line-strong);
+}
+
+.document-item > svg { margin-top: 2px; color: var(--text-muted); }
+.document-item.active > svg { color: var(--accent); }
+.document-item span { min-width: 0; }
+.document-item strong, .document-item small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.document-item strong { font-size: 12px; font-weight: 680; line-height: 1.35; }
+.document-item small { margin-top: 2px; color: var(--text-muted); font-size: 10px; line-height: 1.3; }
+.document-item .dirty-mark { color: var(--accent); font-weight: 800; }
+
+.workspace {
+  display: grid;
+  /* An explicit minmax(0, 1fr) column is required. With only an implicit `auto`
+     column, the track is sized by its widest child's min-content — the header's
+     row of buttons — so the workspace grows past its own grid track and the
+     canvas overflows with it. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-canvas);
+}
+
+/* One header, not two. Window identity belongs to the compositor; this strip
+   carries document identity and the actions that operate on it. */
+.document-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 14px;
+  background: var(--surface-chrome);
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+/* Identity absorbs the squeeze (the title ellipsizes); the tools never shrink,
+   so Save stays a full-size target in a narrow tiled column. */
+.document-identity { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; gap: 9px; }
+
+.file-tab {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 30px;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 8px;
+}
+
+.identity-text { min-width: 0; }
+
+.document-identity h1 {
+  overflow: hidden;
+  max-width: 380px;
+  margin: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: -.025em;
+}
+
+.document-identity p {
+  overflow: hidden;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.document-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+
+.appearance-control { position: relative; }
+
+.appearance-panel {
+  position: fixed;
+  z-index: 8;
+  top: calc(var(--header-h) + 8px);
+  right: 8px;
+  width: 240px;
+  padding: 13px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--text-primary) 18%, transparent);
+}
+
+.appearance-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.appearance-field {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.appearance-field select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 9px;
+  color: var(--text-primary);
+  background: var(--surface-reader);
+  border: 1px solid var(--line-hairline);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.appearance-field select:focus-visible { border-color: var(--accent); }
+
+.zoom-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.zoom-stepper {
+  display: grid;
+  grid-template-columns: 30px 48px 30px;
+  align-items: center;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--surface-reader);
+  border: 1px solid var(--line-hairline);
+  border-radius: 8px;
+}
+
+.zoom-stepper button {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+}
+
+.zoom-stepper button:hover:not(:disabled) { background: var(--accent-tint); }
+.zoom-stepper button:disabled { cursor: default; color: var(--text-muted); opacity: .45; }
+.zoom-stepper output { text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.appearance-reset {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 12px;
+  cursor: pointer;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.appearance-reset:hover:not(:disabled) { color: var(--text-primary); background: var(--accent-tint); }
+.appearance-reset:disabled { cursor: default; color: var(--text-muted); opacity: .5; }
+
+.view-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--surface-chrome) 88%, var(--text-primary));
+  border: 1px solid var(--line-hairline);
+  border-radius: 9px;
+}
+
+.view-switcher button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.view-switcher button:hover { color: var(--text-primary); }
+.view-switcher button.selected { color: var(--text-primary); background: var(--surface-reader); }
+
+.save-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  cursor: pointer;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 80%, var(--text-primary));
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 730;
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+
+.save-button:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.save-button:disabled { opacity: .55; cursor: default; transform: none; }
+
+.save-button kbd {
+  padding: 1px 4px;
+  color: var(--accent-contrast);
+  background: color-mix(in srgb, var(--accent-contrast) 18%, transparent);
+  border-radius: 3px;
+  font-size: 9px;
+  font-family: inherit;
+}
+
+.save-as-button {
+  min-height: 32px;
+  padding: 0 9px;
+  cursor: pointer;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 720;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.save-as-button:hover { color: var(--text-primary); background: var(--accent-tint); }
+
+/* min-width: 0 so the canvas tracks its column instead of being held open by
+   its content's min-content width. */
+.document-canvas { display: grid; min-width: 0; min-height: 0; overflow: hidden; }
+.view-read { grid-template-columns: minmax(0, 1fr); }
+.view-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.view-write { grid-template-columns: minmax(0, 1fr); }
+
+.reader-panel, .editor-panel { min-width: 0; min-height: 0; overflow: auto; }
+
+/* An empty library is a real state, not an error: everything is closed and the
+   canvas offers the three ways back in. */
+.canvas-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 32px 26px;
+  text-align: center;
+  background: var(--surface-reader);
+}
+
+.canvas-empty > svg { color: var(--accent); }
+.canvas-empty h2 { margin: 0; color: var(--text-primary); font-size: 19px; font-weight: 720; letter-spacing: -.01em; }
+.canvas-empty p { max-width: 46ch; margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.55; }
+.canvas-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
+
+.canvas-empty-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 13px;
+  cursor: pointer;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.canvas-empty-actions button:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.reader-panel { padding: clamp(28px, 6vw, 90px) clamp(22px, 8vw, 132px); background: var(--surface-reader); }
+.view-split .reader-panel { padding: clamp(24px, 4.8vw, 68px) clamp(20px, 4.2vw, 75px); border-right: 1px solid var(--line-hairline); }
+
+.markdown-prose {
+  max-width: 700px;
+  margin: 0 auto;
+  color: var(--text-primary);
+  font-family: var(--font-reader);
+  font-size: 18px;
+  line-height: 1.72;
+}
+
+.markdown-prose > :first-child { margin-top: 0; }
+
+/* Headings stay ink, deliberately: hierarchy comes from size, weight and
+   spacing, not hue. See THEMING.md, "Headings stay ink". */
+.markdown-prose h1, .markdown-prose h2, .markdown-prose h3 {
+  scroll-margin-top: 26px;
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -.035em;
+}
+
+.markdown-prose h1 { max-width: 20ch; margin: 0 0 31px; font-size: clamp(32px, 4vw, 56px); }
+.markdown-prose h2 { margin: 2.2em 0 .57em; font-size: 1.55em; }
+.markdown-prose h3 {
+  margin: 1.8em 0 .35em;
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: .75em;
+  font-weight: 790;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.markdown-prose h4, .markdown-prose h5, .markdown-prose h6 {
+  scroll-margin-top: 26px;
+  margin: 1.6em 0 .3em;
+  color: var(--text-secondary);
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: .7em;
+  font-weight: 760;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.markdown-prose p { margin: 0 0 1.12em; }
+.markdown-prose strong { color: var(--text-primary); font-weight: 700; }
+.markdown-prose a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.markdown-prose a:hover { text-decoration-thickness: 2px; }
+.markdown-prose blockquote {
+  margin: 1.8em 0;
+  padding: 17px 22px;
+  color: var(--text-primary);
+  background: var(--accent-tint);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  border-radius: 12px;
+  font-size: 1.04em;
+  line-height: 1.55;
+}
+.markdown-prose blockquote p:last-child { margin-bottom: 0; }
+.markdown-prose ul, .markdown-prose ol { padding-left: 1.3em; margin: 0 0 1.3em; }
+.markdown-prose li { padding-left: .2em; margin: .25em 0; }
+.markdown-prose input[type='checkbox'] { width: 14px; height: 14px; margin: 0 7px 0 0; accent-color: var(--accent); transform: translateY(1px); }
+.markdown-prose code {
+  padding: .13em .35em;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 4px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: .78em;
+}
+.markdown-prose pre {
+  overflow: auto;
+  padding: 17px;
+  color: var(--text-primary);
+  background: var(--surface-code);
+  border: 1px solid var(--line-hairline);
+  border-radius: 12px;
+  line-height: 1.5;
+}
+.markdown-prose pre code { padding: 0; color: inherit; background: transparent; border: 0; }
+.markdown-prose table {
+  width: 100%;
+  margin: 1.7em 0;
+  border-collapse: collapse;
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: .69em;
+  line-height: 1.45;
+}
+.markdown-prose th { color: var(--text-muted); font-size: .9em; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+.markdown-prose th, .markdown-prose td { padding: 10px 8px; border-bottom: 1px solid var(--line-hairline); }
+.markdown-prose hr { height: 1px; margin: 2.5em 0; background: var(--line-hairline); border: 0; }
+
+.editor-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--surface-panel); }
+
+.editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 15px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line-hairline);
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .025em;
+}
+
+.editor-bar span:first-child { display: inline-flex; gap: 6px; align-items: center; }
+
+.editor-panel textarea {
+  width: 100%;
+  height: 100%;
+  padding: clamp(22px, 4vw, 60px) clamp(20px, 5vw, 82px);
+  resize: none;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 14px;
+  line-height: 1.84;
+  tab-size: 2;
+  caret-color: var(--caret);
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 24px;
+  padding: 0 14px;
+  color: var(--text-muted);
+  background: var(--surface-chrome);
+  border-top: 1px solid var(--line-hairline);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.statusbar span { display: inline-flex; align-items: center; gap: 5px; }
+.statusbar-end { margin-left: auto; }
+
+/* Quiet by construction: this exists only while there is a newer version, it
+   lives in the status bar rather than in front of the document, and it carries
+   no colour of its own until it is hovered. It takes over the trailing
+   alignment while present, so the sibling that normally holds it stands down —
+   two auto margins would split the free space and push them apart. */
+.statusbar-update { margin-left: auto; gap: 2px; }
+.statusbar-update + .statusbar-end { margin-left: 0; }
+
+.statusbar-update button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font-size: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.statusbar-update button:hover { color: var(--accent); background: var(--accent-tint); }
+.statusbar-update .update-dismiss { padding: 2px 4px; }
+
+.outline {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 12px 11px;
+  overflow: hidden;
+  background: var(--surface-panel);
+  border-left: 1px solid var(--line-hairline);
+  transition: opacity 180ms ease;
+}
+
+.outline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 3px 0 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 780;
+  letter-spacing: .025em;
+}
+
+.outline-list { flex: 1; padding-top: 10px; overflow: auto; }
+
+.outline-item {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  gap: 2px;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 630;
+  line-height: 1.35;
+}
+
+.outline-item:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-panel) 80%, var(--surface-reader));
+}
+
+.outline-item svg { flex: none; margin-top: 1px; color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.outline-item.level-1 { color: var(--text-secondary); font-weight: 780; }
+.outline-item.level-2 { padding-left: 15px; }
+.outline-item.level-3 { padding-left: 27px; font-size: 10px; }
+.empty-outline { padding: 8px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.outline-tip { display: flex; gap: 8px; padding: 12px 8px 3px; color: var(--text-muted); border-top: 1px solid var(--line-hairline); }
+.outline-tip svg { flex: none; margin-top: 1px; color: var(--accent); }
+.outline-tip p { margin: 0; font-size: 10px; line-height: 1.48; }
+
+/* Collapsed panels are removed from layout entirely rather than hidden with
+   opacity, so they cannot hold keyboard focus while invisible. The column
+   widths themselves are set by the state rules at the end of this file.
+
+   Each region is pinned to its own track. This is load-bearing: a `display:
+   none` panel stops occupying a grid cell, so with auto-placement the workspace
+   would slide into the collapsed panel's zero-width track and the canvas would
+   overflow a 0px parent while the real track sat empty. */
+.sidebar { grid-column: 1; }
+.workspace { grid-column: 2; }
+.outline { grid-column: 3; }
+
+.sidebar-collapsed .sidebar { display: none; }
+.outline-collapsed .outline { display: none; }
+
+/* Tiled windows are routinely far narrower than a floating one. Each step below
+   must stay fully operable, never leave a visible-but-inert control. */
+@media (max-width: 1120px) {
+  /* The outline loses its column and becomes an overlay instead. */
+  .app-shell { position: relative; --col-sidebar: 230px; --col-outline: 0px; }
+  /* Overlays the canvas, never the header — the header holds Save. */
+  .app-shell:not(.outline-collapsed) .outline {
+    position: absolute;
+    z-index: 4;
+    top: var(--header-h);
+    right: 0;
+    bottom: 0;
+    display: flex;
+    width: 240px;
+    box-shadow: -12px 0 28px rgba(0, 0, 0, .22);
+  }
+  .view-switcher button span { display: none; }
+  .view-switcher button { padding: 0 7px; }
+}
+
+/* Above this width the outline is a docked column, so the header toggle is the
+   affordance and the in-panel close button would be a second, redundant one.
+   The toggle itself is NEVER hidden: it is the only control that can reopen the
+   outline, and hiding it once made closing the outline a one-way door. */
+@media (min-width: 1121px) { .outline-heading .icon-button { display: none; } }
+
+@media (max-width: 820px) {
+  /* Sidebar is off by default here; the hamburger brings it back as a column. */
+  .app-shell { --col-sidebar: 0px; }
+  .app-shell.sidebar-open { --col-sidebar: 230px; }
+  :root { --header-h: 46px; }
+  .document-header { min-height: 46px; gap: 8px; padding: 7px 10px; }
+  .document-identity h1 { max-width: 180px; font-size: 13px; }
+  .document-identity p { display: none; }
+  .save-button kbd { display: none; }
+  .save-as-button { display: none; }
+  .view-split { grid-template-columns: minmax(0, 1fr); }
+  .view-split .editor-panel { display: none; }
+  .reader-panel, .view-split .reader-panel { padding: 28px 22px 44px; border-right: 0; }
+  .markdown-prose { font-size: 17px; }
+  .markdown-prose h1 { font-size: 32px; }
+}
+
+/* Quarter-tile territory: the document keeps the whole window. */
+@media (max-width: 560px) {
+  .file-tab { display: none; }
+  .save-button span.save-label { display: none; }
+  .statusbar .statusbar-optional { display: none; }
+  .reader-panel, .view-split .reader-panel { padding: 20px 16px 32px; }
+  .markdown-prose { font-size: 16px; }
+  .markdown-prose h1 { font-size: 27px; margin-bottom: 20px; }
+}
+
+/* Short tiled windows: reclaim vertical space from chrome first. */
+@media (max-height: 460px) {
+  :root { --header-h: 44px; }
+  .document-header { min-height: 44px; padding: 6px 10px; }
+  .document-identity p { display: none; }
+  .outline-tip { display: none; }
+  .reader-panel, .view-split .reader-panel { padding-top: 20px; }
+  .markdown-prose h1 { font-size: 28px; margin-bottom: 16px; }
+  .markdown-prose h2 { margin-top: 1.4em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .new-note:hover, .save-button:hover { transform: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Collapse state. THIS BLOCK MUST STAY LAST.
+
+   These carry two classes (0,2,0) and are declared after every breakpoint, so
+   they win regardless of source order. Both parts matter: a single-class rule
+   placed before a breakpoint's `.app-shell` rule loses at equal specificity and
+   silently leaves a dead column where the panel used to be.
+   --------------------------------------------------------------------------- */
+.app-shell.sidebar-collapsed { --col-sidebar: 0px; }
+.app-shell.outline-collapsed { --col-outline: 0px; }
+
+/* Focus mode: the document gets the window. Only the reading or writing
+   surface and the save controls survive. Declared after the collapse rules
+   so it wins outright whatever the panels' own state happens to be. */
+.app-shell.focus-mode { --col-sidebar: 0px; --col-outline: 0px; }
+.app-shell.focus-mode .sidebar,
+.app-shell.focus-mode .outline,
+.app-shell.focus-mode .statusbar { display: none; }
+.app-shell.focus-mode .document-header {
+  min-height: 44px;
+  padding: 6px 12px;
+  background: var(--surface-reader);
+  border-bottom-color: transparent;
+}
+.app-shell.focus-mode .document-identity h1 {
+  color: var(--text-muted);
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+.app-shell.focus-mode .editor-panel,
+.app-shell.focus-mode .reader-panel { background: var(--surface-reader); }
+.app-shell.focus-mode .editor-bar { display: none; }
+/* Save controls are part of the mode's contract, so they survive the narrow
+   breakpoint that otherwise drops Save as. */
+.app-shell.focus-mode .save-as-button { display: inline-block; }
+.app-shell.focus-mode .view-split .reader-panel { border-right: 1px solid var(--line-hairline); }
+/* Focus mode should give the document more room than the regular canvas. Keep
+   a calm inset, but never replace the responsive padding with a wider gutter. */
+.app-shell.focus-mode .editor-panel textarea,
+.app-shell.focus-mode .reader-panel { padding: clamp(20px, 4vw, 60px) clamp(16px, 4vw, 80px); }
+.app-shell.focus-mode.split-focus .editor-panel textarea,
+.app-shell.focus-mode.split-focus .reader-panel { padding: clamp(18px, 3vw, 48px) clamp(14px, 3vw, 48px); }
+
+/* A window too narrow for a real split normally collapses to the reader, which
+   is right everywhere except here: focus *writing* must keep the writing
+   surface. Invert the collapse rather than dropping the editor. */
+@media (max-width: 820px) {
+  .app-shell.focus-mode.split-focus .editor-panel { display: grid; }
+  .app-shell.focus-mode.split-focus .reader-panel { display: none; }
+  .app-shell.focus-mode .editor-panel textarea,
+  .app-shell.focus-mode .reader-panel { padding: 20px 16px 32px; }
+}
