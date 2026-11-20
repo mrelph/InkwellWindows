@@ -1,0 +1,90 @@
+# Publishes Inkwell for Windows when a version tag is pushed:
+#   git tag v0.2.0 && git push origin v0.2.0
+# The tag must equal package.json's "version" (checked below). Creates a GitHub
+# Release carrying, per architecture:
+#   Inkwell-Setup-<ver>-x64.exe    + .sha256
+#   Inkwell-Setup-<ver>-arm64.exe  + .sha256
+#   Inkwell-Portable-<ver>-x64.exe + .sha256   (portable never self-updates)
+# The in-app updater (src-electron/update.ts) reads /releases/latest and
+# requires these exact names; see scripts/release-checksums.ps1 for the
+# .sha256 format.
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm via corepack
+        shell: pwsh
+        run: corepack enable
+
+      - name: Tag must match package.json version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ('${{ github.ref_name }}' -ne "v$version") {
+            throw "Tag ${{ github.ref_name }} does not match package.json version $version"
+          }
+
+      - name: Install
+        shell: pwsh
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        shell: pwsh
+        run: corepack pnpm typecheck
+
+      - name: Test
+        shell: pwsh
+        run: corepack pnpm test
+
+      # ---- Code signing (OFF: no certificate secrets yet) ------------------
+      # electron-builder signs automatically when these are present. To enable,
+      # add repository secrets and uncomment the env block on the three package
+      # steps below (WIN_CSC_LINK = base64 .pfx or URL, WIN_CSC_KEY_PASSWORD).
+      # Once the app is signed, the updater also requires every update to be
+      # signed by the same publisher (Authenticode subject).
+      #   env:
+      #     WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      #     WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Package x64 installer
+        shell: pwsh
+        run: corepack pnpm package:windows
+
+      - name: Package arm64 installer
+        shell: pwsh
+        run: corepack pnpm package:windows:arm64
+
+      - name: Package x64 portable
+        shell: pwsh
+        run: corepack pnpm package:windows:portable
+
+      - name: Checksums
+        shell: pwsh
+        run: ./scripts/release-checksums.ps1 -Directory release
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem release -File |
+            Where-Object { $_.Name -match '^Inkwell-(Setup|Portable)-.*\.exe(\.sha256)?$' } |
+            ForEach-Object { $_.FullName }
+          gh release create '${{ github.ref_name }}' @assets `
+            --repo '${{ github.repository }}' --verify-tag `
+            --title "Inkwell ${{ github.ref_name }}" --generate-notes --latest

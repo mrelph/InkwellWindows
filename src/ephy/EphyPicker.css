@@ -1,0 +1,148 @@
+/* Ephy picker and confirmations. Owned by the Ephy workstream (H). Tokens
+   only — no color literals. Everything here is position: fixed (it sits beside
+   the grid); nothing sets grid placement or a region's display. */
+
+.ephy-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(24px, 10vh, 96px) 16px 16px;
+  background: color-mix(in srgb, var(--surface-code) 42%, transparent);
+}
+
+.ephy-picker,
+.ephy-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 48px);
+  padding: 18px 20px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--surface-code) 38%, transparent);
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: 13px;
+}
+
+.ephy-picker { width: min(560px, 100%); height: min(460px, calc(100vh - 48px)); }
+.ephy-dialog { width: min(440px, 100%); }
+
+.ephy-dialog-title { margin: 0; font-size: 14px; font-weight: 760; line-height: 1.35; }
+.ephy-dialog-detail { margin: 0; color: var(--text-secondary); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.ephy-search,
+.ephy-field input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: var(--surface-reader);
+  border: 1px solid var(--line-hairline);
+  border-radius: 8px;
+}
+.ephy-search:focus-within,
+.ephy-field input:focus { border-color: var(--accent-ring); outline: none; }
+.ephy-search input {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: inherit;
+}
+
+.ephy-field { display: grid; gap: 4px; color: var(--text-secondary); font-weight: 650; }
+.ephy-field input { color: var(--text-primary); font: inherit; font-weight: 500; width: 100%; box-sizing: border-box; }
+
+.ephy-check { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+.ephy-check input { accent-color: var(--accent); }
+
+.ephy-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-reader);
+  border: 1px solid var(--line-hairline);
+  border-radius: 8px;
+}
+
+.ephy-list { height: 100%; margin: 0; padding: 4px; overflow-y: auto; list-style: none; }
+
+.ephy-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: default;
+}
+.ephy-row:hover { background: var(--accent-tint); }
+.ephy-row.is-selected { color: var(--accent-contrast); background: var(--accent); }
+.ephy-row-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ephy-row-time { flex: none; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ephy-row.is-selected .ephy-row-time { color: inherit; opacity: .8; }
+
+.ephy-more { display: flex; justify-content: center; padding: 8px; }
+
+.ephy-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 16px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.ephy-state p { margin: 0; line-height: 1.5; }
+.ephy-hint { color: var(--text-muted); font-size: 12px; }
+.ephy-hint code { padding: 1px 5px; color: var(--text-primary); background: var(--accent-tint); border-radius: 4px; }
+
+.ephy-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ephy-spin .8s linear infinite;
+}
+@keyframes ephy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ephy-spinner { animation-duration: 2.4s; } }
+
+.ephy-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.ephy-spacer { flex: 1; }
+
+.ephy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 14px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+.ephy-button:hover:not(:disabled) { background: var(--accent-tint); }
+.ephy-button:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 1px; }
+.ephy-button:disabled { opacity: .45; cursor: default; }
+.ephy-button.is-primary { color: var(--accent-contrast); background: var(--accent); border-color: var(--accent); }
+.ephy-button.is-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.ephy-button.is-danger { color: var(--text-inverse); background: var(--caret); border-color: var(--caret); }
+.ephy-button.is-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--caret) 85%, var(--text-primary)); }

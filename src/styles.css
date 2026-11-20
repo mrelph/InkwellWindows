@@ -1,8 +1,11 @@
 /* Inkwell — see THEMING.md for the token contract and DESIGN.md for everything
    that is not color. No raw color literals below the :root block: every colour
-   resolves to a token so an Omarchy theme change repaints the app wholesale.
-   The values here are the DESIGN.md default palette, used verbatim when Inkwell
-   runs off Omarchy and as the pre-injection paint to avoid a flash. */
+   resolves to a token so a theme change repaints the app wholesale.
+   The values here are the DESIGN.md default palette, used as the pre-injection
+   paint to avoid a flash; the main process then injects the resolved theme
+   tokens over them. The identity accents and the overlay shadow are the
+   exception: they are brand constants, defined here and nowhere else, and
+   theme injection does not replace them. */
 :root {
   --surface-reader: #fbf8f1;
   --surface-panel: #e9e2d6;
@@ -22,32 +25,77 @@
   --accent: #1b6366;
   --accent-hover: #217276;
   --accent-contrast: #f6f5ee;
-  --accent-tint: rgba(27, 99, 102, 0.1);
+  --accent-tint: rgba(27, 99, 102, 0.16);
   --accent-ring: #167b81;
 
   --caret: #e56d40;
   --selection-bg: #b9e1db;
   --selection-text: #102024;
 
+  /* Identity accents (DESIGN.md). They sit beside the theme accent and each
+     has exactly one job: amber is the New note invitation, coral is document
+     identity (the header badge, the active row's file icon, the unsaved dot).
+     These three literals are the only place the hues are written down.
+
+     Amber is always a fill under --identity-amber-ink, a fixed ink that does
+     NOT follow the theme: the pair is about 8:1 in light and dark alike, where
+     --text-primary would turn cream on amber in a dark theme.
+
+     Coral is used raw only for tints and borders. Anything that has to be
+     read against a surface — an icon, the dot — takes --identity-coral-ink,
+     which leans a fifth of the way toward the theme's text colour: darker on
+     light paper, lighter on dark panels, so on the system palettes it clears
+     3:1 against every surface in both modes without a second literal. */
+  --identity-amber: #f2b86f;
+  --identity-amber-ink: #1c2b31;
+  --identity-coral: #e56d40;
+  --identity-coral-ink: color-mix(in srgb, var(--identity-coral) 80%, var(--text-primary));
+
+  /* The ambient edge under a panel that overlays the canvas. */
+  --shadow-overlay: rgba(0, 0, 0, .22);
+
+  --font-ui: 'Manrope Variable', Manrope, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  /* The reading font: body text, h1 and h2. h3-h6, tables and chrome stay
+     --font-ui and code stays --font-mono whatever is chosen. */
   --font-reader: 'Source Serif 4', Georgia, serif;
+  --font-reader-heading: var(--font-reader);
+  --reader-heading-tracking: -.035em;
 
   /* Tracks .document-header's height so the compact outline can overlay the
      canvas without covering the header's actions. */
-  --header-h: 52px;
+  --header-h: 64px;
 
   color-scheme: light;
   color: var(--text-primary);
   background: var(--surface-canvas);
-  font-family: 'Manrope Variable', Manrope, sans-serif;
+  font-family: var(--font-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
 :root[data-theme-mode='dark'] { color-scheme: dark; }
 :root[data-reader-font='classic'] { --font-reader: Georgia, 'Times New Roman', serif; }
-:root[data-reader-font='sans'] { --font-reader: 'Manrope Variable', Manrope, sans-serif; }
-:root[data-reader-font='system'] { --font-reader: system-ui, sans-serif; }
-:root[data-reader-font='mono'] { --font-reader: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; }
+:root[data-reader-font='sans'] { --font-reader: var(--font-ui); }
+:root[data-reader-font='system'] { --font-reader: system-ui, 'Segoe UI', sans-serif; }
+:root[data-reader-font='mono'] { --font-reader: var(--font-mono); }
+
+/* Installed-only reading fonts. They are never bundled, so each applies only
+   while fonts/installedFonts.ts has found it on this machine and listed it in
+   data-fonts-installed. A saved choice whose font is missing matches nothing
+   here and so draws exactly as the default — and starts working by itself once
+   the font is installed. The default stays in each stack for missing glyphs. */
+:root[data-reader-font='bookerly'][data-fonts-installed~='bookerly'] { --font-reader: 'Bookerly', 'Source Serif 4', Georgia, serif; }
+/* Ember has a display cut for h1 and h2. It is already tight, so the usual
+   -0.035em would run its words together. */
+:root[data-reader-font='ember'][data-fonts-installed~='ember'] {
+  --font-reader: 'Ember Modern Text', 'Source Serif 4', Georgia, serif;
+  --font-reader-heading: 'Ember Modern Display', 'Ember Modern Text', 'Source Serif 4', Georgia, serif;
+  --reader-heading-tracking: -.01em;
+}
+:root[data-reader-font='roboto'][data-fonts-installed~='roboto'] { --font-reader: 'Roboto', 'Source Serif 4', Georgia, serif; }
+:root[data-reader-font='ubuntu'][data-fonts-installed~='ubuntu'] { --font-reader: 'Ubuntu', 'Source Serif 4', Georgia, serif; }
+:root[data-reader-font='geist-mono'][data-fonts-installed~='geist-mono'] { --font-reader: 'Geist Mono', 'Source Serif 4', Georgia, serif; }
 
 * { box-sizing: border-box; }
 
@@ -76,17 +124,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--text-muted); }
 
-/* The compositor owns the window frame: Hyprland draws the border and the
-   title, so Inkwell ships no titlebar of its own. Three regions, one row.
+/* The platform owns the window frame (the native frame on Windows, the
+   compositor on Linux), so Inkwell ships no titlebar of its own. One row.
 
-   grid-template-columns is declared exactly ONCE, here. Panel widths are custom
+   grid-template-columns is declared exactly ONCE, here. Four tracks: library,
+   workspace, outline, agent panel. Panel widths are custom
    properties so breakpoints and collapse state compose instead of competing —
    see the cascade note at the end of this file before changing either. */
 .app-shell {
   --col-sidebar: 250px;
   --col-outline: 220px;
+  --col-agent: 340px;
+  /* The containing block for the outline and agent overlays. */
+  position: relative;
   display: grid;
-  grid-template-columns: var(--col-sidebar) minmax(0, 1fr) var(--col-outline);
+  grid-template-columns: var(--col-sidebar) minmax(0, 1fr) var(--col-outline) var(--col-agent);
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -110,13 +162,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .icon-button:hover {
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--surface-chrome) 82%, var(--text-primary));
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 /* An inert control has to look inert. Hover feedback on a disabled button
    reads as a click that failed rather than as "not right now". */
 .icon-button:disabled { opacity: .4; cursor: default; }
 .icon-button:disabled:hover { color: var(--text-muted); background: transparent; }
+
+/* The header's agent-panel toggle reads as "on" while the panel is open. */
+.icon-button.agent-toggle.selected { color: var(--accent); }
 
 .sidebar {
   display: flex;
@@ -137,29 +192,32 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 32px;
+  height: 32px;
   padding: 0 10px;
   cursor: pointer;
-  color: var(--accent);
-  background: var(--accent-tint);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  /* The one amber control: an invitation to start a note. Ink on amber in
+     both modes, with a warm coral edge. */
+  color: var(--identity-amber-ink);
+  background: var(--identity-amber);
+  border: 1px solid color-mix(in srgb, var(--identity-coral) 35%, transparent);
   border-radius: 9px;
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
   letter-spacing: -.01em;
+  white-space: nowrap;
   transition: background-color 140ms ease, transform 140ms ease;
 }
 
 .new-note:hover {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--identity-amber) 90%, var(--identity-amber-ink));
   transform: translateY(-1px);
 }
 
 .search-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
+  gap: 6px;
+  height: 32px;
   padding: 0 9px;
   color: var(--text-muted);
   background: color-mix(in srgb, var(--surface-reader) 55%, transparent);
@@ -212,9 +270,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   min-height: 34px;
   padding: 11px 5px 5px;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 740;
-  letter-spacing: .055em;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .7px;
   text-transform: uppercase;
 }
 
@@ -391,12 +449,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 .document-item > svg { margin-top: 2px; color: var(--text-muted); }
-.document-item.active > svg { color: var(--accent); }
+.document-item.active > svg { color: var(--identity-coral-ink); }
 .document-item span { min-width: 0; }
 .document-item strong, .document-item small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.document-item strong { font-size: 12px; font-weight: 680; line-height: 1.35; }
-.document-item small { margin-top: 2px; color: var(--text-muted); font-size: 10px; line-height: 1.3; }
-.document-item .dirty-mark { color: var(--accent); font-weight: 800; }
+.document-item strong { font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+.document-item small { margin-top: 1px; color: var(--text-muted); font-size: 10.5px; line-height: 1.3; }
+.document-item .dirty-mark { color: var(--identity-coral-ink); font-weight: 800; }
 
 .workspace {
   display: grid;
@@ -411,71 +469,161 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: var(--surface-canvas);
 }
 
-/* One header, not two. Window identity belongs to the compositor; this strip
-   carries document identity and the actions that operate on it. */
+/* One header, not two. Window identity belongs to the native frame; this strip
+   carries document identity and the actions that operate on it.
+
+   The row never clips and never wraps. Header.tsx measures it and steps down
+   through eight stages (`data-stage`: full, iconViews, noShortcutHint,
+   iconSaveAs, noSubtitle, overflow, compact, iconSave), dropping the least
+   important thing first; Save keeps its label longest. Which controls a stage
+   draws is decided in the component — the rules here only restyle what is
+   left. The gaps and paddings below are part of what gets measured. */
 .document-header {
   display: flex;
-  justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   align-items: center;
   min-width: 0;
-  min-height: 52px;
-  padding: 8px 14px;
+  height: var(--header-h);
+  padding: 0 16px;
   background: var(--surface-chrome);
   border-bottom: 1px solid var(--line-hairline);
 }
 
-/* Identity absorbs the squeeze (the title ellipsizes); the tools never shrink,
-   so Save stays a full-size target in a narrow tiled column. */
-.document-identity { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; gap: 9px; }
+/* Identity absorbs the squeeze (the title ellipsizes or wraps); the tools
+   never shrink, so Save stays a full-size target in a narrow tiled column. */
+.document-identity { display: flex; flex: 1 1 0; align-items: center; min-width: 0; gap: 10px; }
 
+.document-header:is([data-stage='compact'], [data-stage='iconSave']),
+.document-header:is([data-stage='compact'], [data-stage='iconSave']) :is(.document-identity, .document-tools) { gap: 6px; }
+.document-header:is([data-stage='compact'], [data-stage='iconSave']) { padding: 0 10px; }
+
+/* Coral marks document identity: this badge, the active row's file icon and
+   the unsaved dot. Nothing else is coral. */
 .file-tab {
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 30px;
-  color: var(--accent);
-  background: var(--accent-tint);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  width: 32px;
+  height: 32px;
+  color: var(--identity-coral-ink);
+  background: color-mix(in srgb, var(--identity-coral) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--identity-coral) 30%, transparent);
   border-radius: 8px;
 }
 
-.identity-text { min-width: 0; }
+.identity-text { flex: 1 1 0; min-width: 0; }
 
+/* Without the status line there is room to wrap at a word before the title
+   has to truncate, so the late stages give it two lines. */
 .document-identity h1 {
+  display: -webkit-box;
   overflow: hidden;
-  max-width: 380px;
   margin: 0;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
   color: var(--text-primary);
   font-size: 14px;
-  font-weight: 760;
-  letter-spacing: -.025em;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -.02em;
 }
 
-.document-identity p {
-  overflow: hidden;
-  margin: 2px 0 0;
+.document-header:is([data-stage='full'], [data-stage='iconViews'], [data-stage='noShortcutHint'], [data-stage='iconSaveAs']) h1 {
+  display: block;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
 }
 
-.document-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+/* The status line is shown whole or not at all, never cut mid-word: it is a
+   one-line-high wrapping row, and a notice too long for the line wraps onto a
+   second line that is clipped away. */
+.document-identity p {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  height: 1.35em;
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.document-identity p::before { content: ''; width: 0; height: 1.35em; }
+.document-identity p span { flex: none; white-space: nowrap; }
 
-.appearance-control { position: relative; }
+/* Out of sight, still announced. */
+.visually-hidden, .document-identity p.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.document-tools { display: flex; flex: none; align-items: center; gap: 10px; }
+
+/* The late-stage menus: the view switcher as one button (compact) and the ⋯
+   menu that takes Appearance, zoom, Focus and, when compact, Save as. */
+.header-menu { position: relative; flex: none; }
+.view-menu .header-menu-button { display: inline-flex; gap: 2px; align-items: center; width: auto; padding: 0 5px 0 7px; }
+
+.header-menu-list {
+  position: absolute;
+  z-index: 9;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 196px;
+  padding: 5px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--text-primary) 26%, transparent);
+}
+
+.header-menu-list button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.header-menu-list button svg { flex: none; color: var(--text-muted); }
+.header-menu-list button span { flex: 1; }
+.header-menu-list button kbd { color: var(--text-muted); font-family: inherit; font-size: 10px; font-weight: 600; }
+.header-menu-list button:hover:not(:disabled), .header-menu-list button:focus-visible { color: var(--text-primary); background: var(--accent-tint); outline: 0; }
+.header-menu-list button:hover:not(:disabled) svg { color: var(--accent); }
+.header-menu-list button:disabled { cursor: default; opacity: .45; }
+.header-menu-list button.checked, .header-menu-list button.checked svg { color: var(--accent); font-weight: 760; }
+.header-menu-list button.separated { margin-top: 5px; border-top: 1px solid var(--line-hairline); border-top-left-radius: 0; border-top-right-radius: 0; padding-top: 10px; }
+
+.appearance-control { position: relative; flex: none; }
+/* Late header stages reach Appearance through the ⋯ menu. The control then
+   draws no button and takes no box (and so no gap) in the row, but the panel
+   below is fixed to the viewport and still opens. */
+.appearance-control.appearance-buttonless { display: contents; }
 
 .appearance-panel {
   position: fixed;
   z-index: 8;
   top: calc(var(--header-h) + 8px);
   right: 8px;
-  width: 240px;
-  padding: 13px;
+  width: min(280px, calc(100vw - 16px));
+  padding: 16px;
   color: var(--text-primary);
   background: var(--surface-raised);
   border: 1px solid var(--line-strong);
@@ -487,17 +635,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 0 0 12px;
-  font-size: 11px;
-  font-weight: 780;
+  margin: 0 0 14px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .appearance-field {
   display: grid;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .appearance-field select {
@@ -514,6 +662,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 .appearance-field select:focus-visible { border-color: var(--accent); }
+/* A reading font this machine does not have: listed, marked, not selectable. */
+.appearance-field select option:disabled { color: var(--text-muted); }
 
 .zoom-setting {
   display: flex;
@@ -522,8 +672,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   gap: 12px;
   margin-top: 14px;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .zoom-stepper {
@@ -561,8 +711,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: 8px;
-  font-size: 10px;
-  font-weight: 720;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .appearance-reset:hover:not(:disabled) { color: var(--text-primary); background: var(--accent-tint); }
@@ -570,75 +720,93 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .view-switcher {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 2px;
   padding: 3px;
-  background: color-mix(in srgb, var(--surface-chrome) 88%, var(--text-primary));
+  background: var(--surface-panel);
   border: 1px solid var(--line-hairline);
-  border-radius: 9px;
+  border-radius: 10px;
 }
 
 .view-switcher button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 26px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 10px;
   cursor: pointer;
   color: var(--text-muted);
   background: transparent;
   border: 0;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
   transition: background-color 140ms ease, color 140ms ease;
 }
 
 .view-switcher button:hover { color: var(--text-primary); }
-.view-switcher button.selected { color: var(--text-primary); background: var(--surface-reader); }
+.view-switcher button.selected {
+  color: var(--accent);
+  background: var(--surface-reader);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 10%, transparent);
+  font-weight: 700;
+}
 
+/* The one filled control: teal, with a soft functional lift. */
 .save-button {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
-  min-height: 32px;
-  padding: 0 10px;
+  height: 32px;
+  padding: 0 12px;
   cursor: pointer;
   color: var(--accent-contrast);
   background: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 80%, var(--text-primary));
+  border: 0;
   border-radius: 8px;
-  font-size: 11px;
-  font-weight: 730;
+  box-shadow: 0 2px 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
   transition: background-color 140ms ease, transform 140ms ease;
 }
 
 .save-button:hover { background: var(--accent-hover); transform: translateY(-1px); }
-.save-button:disabled { opacity: .55; cursor: default; transform: none; }
+.save-button:disabled { opacity: .45; cursor: default; transform: none; background: var(--accent); }
 
 .save-button kbd {
-  padding: 1px 4px;
   color: var(--accent-contrast);
-  background: color-mix(in srgb, var(--accent-contrast) 18%, transparent);
-  border-radius: 3px;
-  font-size: 9px;
+  opacity: .7;
   font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
 }
 
-.save-as-button {
-  min-height: 32px;
-  padding: 0 9px;
+/* The quiet button: paper-adjacent, hairline, secondary ink. Save as here, and
+   the empty canvas's actions below. */
+.save-as-button, .canvas-empty-actions button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 11px;
   cursor: pointer;
-  color: var(--accent);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-reader) 60%, transparent);
+  border: 1px solid var(--line-hairline);
   border-radius: 8px;
-  font-size: 11px;
-  font-weight: 720;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
   transition: color 140ms ease, background-color 140ms ease;
 }
 
-.save-as-button:hover { color: var(--text-primary); background: var(--accent-tint); }
+.save-as-button:hover:not(:disabled), .canvas-empty-actions button:hover:not(:disabled) { color: var(--text-primary); background: var(--surface-raised); }
+.save-as-button:disabled, .canvas-empty-actions button:disabled { opacity: .45; cursor: default; }
 
 /* min-width: 0 so the canvas tracks its column instead of being held open by
    its content's min-content width. */
@@ -649,44 +817,71 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .reader-panel, .editor-panel { min-width: 0; min-height: 0; overflow: auto; }
 
-/* An empty library is a real state, not an error: everything is closed and the
-   canvas offers the three ways back in. */
+/* An empty library is a real state, not an error: one quiet line in the
+   reading font and the ways back in (Mac EmptyCanvas). */
 .canvas-empty {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 11px;
+  gap: 18px;
   min-width: 0;
-  padding: 32px 26px;
+  padding: 32px;
   text-align: center;
   background: var(--surface-reader);
 }
 
-.canvas-empty > svg { color: var(--accent); }
-.canvas-empty h2 { margin: 0; color: var(--text-primary); font-size: 19px; font-weight: 720; letter-spacing: -.01em; }
-.canvas-empty p { max-width: 46ch; margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.55; }
-.canvas-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
-
-.canvas-empty-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 32px;
-  padding: 0 13px;
-  cursor: pointer;
-  color: var(--accent);
-  background: var(--accent-tint);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 9px;
-  font-size: 12px;
-  font-weight: 720;
+.canvas-empty h2 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-reader);
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.4;
+  font-optical-sizing: auto;
 }
 
-.canvas-empty-actions button:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-.reader-panel { padding: clamp(28px, 6vw, 90px) clamp(22px, 8vw, 132px); background: var(--surface-reader); }
-.view-split .reader-panel { padding: clamp(24px, 4.8vw, 68px) clamp(20px, 4.2vw, 75px); border-right: 1px solid var(--line-hairline); }
+.canvas-empty-actions { display: flex; gap: 8px; justify-content: center; }
+.canvas-empty-actions button svg { flex: none; }
 
+/* A row while it fits, else a column — all or nothing, never two and one —
+   with the stacked buttons sharing the widest one's width. The thresholds are
+   the row's natural width with three actions and with a fourth (Ephy). */
+@container (max-width: 372px) {
+  .canvas-empty-actions { flex-direction: column; align-items: stretch; }
+  .canvas-empty-actions button { justify-content: flex-start; }
+}
+@container (max-width: 540px) {
+  .canvas-empty-actions:has(> :nth-child(4)) { flex-direction: column; align-items: stretch; }
+  .canvas-empty-actions:has(> :nth-child(4)) button { justify-content: flex-start; }
+}
+/* Mac ReaderView: a 700px measure with 48px gutters, 56px above and 96px
+   below, in every view. */
+.reader-panel { padding: 56px 48px 96px; background: var(--surface-reader); }
+.view-split .reader-panel { border-right: 1px solid var(--line-hairline); }
+
+/* What an "own padding" block (quote, code, list, rule) leaves below itself
+   for the block that follows. Not inherited: it belongs to that one sibling. */
+@property --gap-carry {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* The reading surface. Vertical rhythm is Mac's ReaderSpacing.swift, which was
+   itself derived from this stylesheet, so most of it is simply how CSS lays
+   out blocks:
+
+   - Half-leading. A line box is its font's natural height plus the rest of the
+     line-height split above and below, so the gap between two blocks is their
+     margins plus each one's half-leading. CSS does this by construction.
+   - Collapsed margins. Adjacent margins collapse to the larger: h2's 2.2em top
+     swallows a paragraph's 1.12em bottom.
+   - Own-padding blocks. Quotes, code, lists and rules keep a fixed space below
+     themselves that is ADDED to the next block's own top gap rather than
+     collapsed into it. `--gap-carry` restores that sum for the blocks that
+     have a top gap (headings and tables). */
 .markdown-prose {
   max-width: 700px;
   margin: 0 auto;
@@ -694,93 +889,184 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-family: var(--font-reader);
   font-size: 18px;
   line-height: 1.72;
+  /* opsz follows the rendered size on the variable serif, so the 56px title
+     takes the display cut and 18px body the text cut. */
+  font-optical-sizing: auto;
+  /* Real italics where the family has them; a slant, not nothing, where it
+     does not (Manrope labels, the system mono). Weights are never faked. */
+  font-synthesis: style;
+  overflow-wrap: break-word;
 }
-
-.markdown-prose > :first-child { margin-top: 0; }
 
 /* Headings stay ink, deliberately: hierarchy comes from size, weight and
    spacing, not hue. See THEMING.md, "Headings stay ink". */
-.markdown-prose h1, .markdown-prose h2, .markdown-prose h3 {
-  scroll-margin-top: 26px;
+.markdown-prose :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 26px; }
+.markdown-prose :is(h2, h3, h4, h5, h6, table, .table-scroll) { margin-top: calc(var(--gap-top) + var(--gap-carry)); }
+.markdown-prose > :first-child { margin-top: 0; }
+
+/* h1 and h2: the reading font's heading family at 600, tightly tracked. */
+.markdown-prose h1, .markdown-prose h2 {
   color: var(--text-primary);
+  font-family: var(--font-reader-heading);
   font-weight: 600;
   line-height: 1.08;
-  letter-spacing: -.035em;
+  letter-spacing: var(--reader-heading-tracking);
 }
 
-.markdown-prose h1 { max-width: 20ch; margin: 0 0 31px; font-size: clamp(32px, 4vw, 56px); }
-.markdown-prose h2 { margin: 2.2em 0 .57em; font-size: 1.55em; }
+/* 4vw of the LAYOUT width, so a docked agent panel shrinks the title the way
+   a narrower window would. 20ch caps the title's measure. */
+.markdown-prose h1 { max-width: 20ch; margin: 0 0 31px; font-size: clamp(32px, calc(var(--layout-w, 100vw) * .04), 56px); }
+.markdown-prose h2 { --gap-top: 2.2em; margin-bottom: .57em; font-size: 1.55em; }
+
+/* h3-h6 are labels: always Manrope, whatever the reading font. h3 is the
+   790 one in ink; h4-h6 step down to 760 in the secondary ink. */
 .markdown-prose h3 {
-  margin: 1.8em 0 .35em;
-  font-family: 'Manrope Variable', sans-serif;
+  --gap-top: 1.8em;
+  margin-bottom: .35em;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
   font-size: .75em;
   font-weight: 790;
+  line-height: 1.08;
   letter-spacing: .035em;
   text-transform: uppercase;
 }
 .markdown-prose h4, .markdown-prose h5, .markdown-prose h6 {
-  scroll-margin-top: 26px;
-  margin: 1.6em 0 .3em;
+  --gap-top: 1.6em;
+  margin-bottom: .3em;
   color: var(--text-secondary);
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: var(--font-ui);
   font-size: .7em;
   font-weight: 760;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
+/* `strong` is 700; it never thins a heavier label. */
+.markdown-prose :is(h3, h4, h5, h6) strong { font-weight: inherit; }
+
 .markdown-prose p { margin: 0 0 1.12em; }
 .markdown-prose strong { color: var(--text-primary); font-weight: 700; }
 .markdown-prose a {
   color: var(--accent);
-  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 .markdown-prose a:hover { text-decoration-thickness: 2px; }
+
+/* A callout: accent-tinted rounded card with a fine accent border. Its
+   contents keep the body size and rhythm. */
 .markdown-prose blockquote {
-  margin: 1.8em 0;
-  padding: 17px 22px;
+  margin: 0 0 20px;
+  padding: 18px 22px 20px;
   color: var(--text-primary);
   background: var(--accent-tint);
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: 12px;
-  font-size: 1.04em;
-  line-height: 1.55;
 }
-.markdown-prose blockquote p:last-child { margin-bottom: 0; }
-.markdown-prose ul, .markdown-prose ol { padding-left: 1.3em; margin: 0 0 1.3em; }
-.markdown-prose li { padding-left: .2em; margin: .25em 0; }
-.markdown-prose input[type='checkbox'] { width: 14px; height: 14px; margin: 0 7px 0 0; accent-color: var(--accent); transform: translateY(1px); }
+.markdown-prose blockquote > :first-child { margin-top: 0; }
+.markdown-prose blockquote > :last-child { margin-bottom: 0; }
+.markdown-prose :is(blockquote, pre, .code-block) + * { --gap-carry: 20px; }
+
+/* Lists sit tight: items a few pixels apart, paragraphs inside them unspaced. */
+.markdown-prose ul, .markdown-prose ol { padding-left: 1.3em; margin: 0 0 8px; }
+.markdown-prose li { padding-left: .2em; margin: 0; }
+.markdown-prose li + li { margin-top: 2px; }
+.markdown-prose li > p { margin: 0 0 2px; }
+.markdown-prose li::marker { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.markdown-prose ul > li::marker { font-weight: 700; }
+.markdown-prose :is(ul, ol) + * { --gap-carry: 8px; }
+/* A task item's checkbox is its marker. */
+.markdown-prose ul.contains-task-list { padding-left: .2em; }
+.markdown-prose li.task-list-item { list-style: none; }
+.markdown-prose input[type='checkbox'] { width: 15px; height: 15px; margin: 0 10px 0 0; accent-color: var(--accent); transform: translateY(1px); }
+
 .markdown-prose code {
   padding: .13em .35em;
   color: var(--accent);
   background: var(--accent-tint);
   border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-radius: 4px;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-family: var(--font-mono);
   font-size: .78em;
 }
+
+/* A code block is a card: code surface, hairline, broad corners. Long lines
+   scroll sideways inside the card instead of wrapping. */
 .markdown-prose pre {
-  overflow: auto;
-  padding: 17px;
+  overflow-x: auto;
+  margin: 0 0 20px;
+  padding: 16px;
   color: var(--text-primary);
   background: var(--surface-code);
   border: 1px solid var(--line-hairline);
   border-radius: 12px;
+  font-family: var(--font-mono);
+  font-size: 14px;
   line-height: 1.5;
+  tab-size: 2;
 }
-.markdown-prose pre code { padding: 0; color: inherit; background: transparent; border: 0; }
+.markdown-prose pre code { padding: 0; color: inherit; background: transparent; border: 0; font-size: inherit; }
+
+/* The reader wraps a fenced block as `.code-block` > [`.code-lang`] + <pre>.
+   The wrapper is the card, so the language label (Mac: uppercased 10px bold
+   Manrope, muted) stays put while the code scrolls under it. The selectors
+   carry one extra step of specificity on purpose: the reader's own reader.css
+   loads after this file and holds provisional values for the same elements. */
+.markdown-prose .code-block > .code-lang {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  user-select: none;
+}
+.markdown-prose div.code-block {
+  margin: 0 0 20px;
+  padding: 16px;
+  background: var(--surface-code);
+  border: 1px solid var(--line-hairline);
+  border-radius: 12px;
+}
+.markdown-prose div.code-block > pre { margin: 0; padding: 0; background: transparent; border: 0; border-radius: 0; }
+
+/* Tables: full measure and automatic layout. That is the min/max-content
+   algorithm Mac's TableMath reproduces — each column is at least its widest
+   word and at most its longest unwrapped cell, and spare width is shared in
+   proportion to content. Cells wrap before the table overflows. Per-column
+   alignment arrives inline from the Markdown (`:---:`), so nothing here may
+   set text-align on a body cell. */
 .markdown-prose table {
+  --gap-top: 1.7em;
   width: 100%;
-  margin: 1.7em 0;
+  margin-bottom: 1.7em;
   border-collapse: collapse;
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: var(--font-ui);
   font-size: .69em;
   line-height: 1.45;
 }
-.markdown-prose th { color: var(--text-muted); font-size: .9em; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
-.markdown-prose th, .markdown-prose td { padding: 10px 8px; border-bottom: 1px solid var(--line-hairline); }
-.markdown-prose hr { height: 1px; margin: 2.5em 0; background: var(--line-hairline); border: 0; }
+.markdown-prose th {
+  color: var(--text-muted);
+  font-size: .9em;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.markdown-prose th, .markdown-prose td { padding: 10px 8px; vertical-align: middle; border-bottom: 1px solid var(--line-hairline); }
+/* Only a table whose widest words cannot fit scrolls, and it scrolls by
+   itself rather than dragging the page sideways. That needs a wrapper the
+   reader provides; without one the reading pane scrolls instead. */
+.markdown-prose .table-scroll { --gap-top: calc(1.7em * .69); margin-bottom: calc(1.7em * .69); overflow-x: auto; }
+.markdown-prose .table-scroll > table { margin: 0; }
+
+/* A rule keeps 24px on each side as padding, not margin, so it adds to the
+   neighbouring blocks' own gaps instead of collapsing into them. */
+.markdown-prose hr { height: 49px; margin: 0; padding: 24px 0; background: var(--line-hairline) content-box; border: 0; }
 
 .editor-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--surface-panel); }
 
@@ -788,14 +1074,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 34px;
-  padding: 0 15px;
+  min-height: 38px;
+  padding: 0 18px;
   color: var(--text-muted);
   border-bottom: 1px solid var(--line-hairline);
-  font-family: 'Manrope Variable', sans-serif;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .025em;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .editor-bar span:first-child { display: inline-flex; gap: 6px; align-items: center; }
@@ -809,7 +1094,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: transparent;
   border: 0;
   outline: none;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.84;
   tab-size: 2;
@@ -819,14 +1104,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .statusbar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-height: 24px;
-  padding: 0 14px;
+  gap: 16px;
+  min-height: 30px;
+  padding: 0 18px;
   color: var(--text-muted);
   background: var(--surface-chrome);
   border-top: 1px solid var(--line-hairline);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .statusbar span { display: inline-flex; align-items: center; gap: 5px; }
@@ -875,10 +1160,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   justify-content: space-between;
   min-height: 30px;
   padding: 0 3px 0 9px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 780;
-  letter-spacing: .025em;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .outline-list { flex: 1; padding-top: 10px; overflow: auto; }
@@ -895,8 +1179,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: transparent;
   border: 0;
   border-radius: 7px;
-  font-size: 11px;
-  font-weight: 630;
+  font-size: 11.5px;
+  font-weight: 500;
   line-height: 1.35;
 }
 
@@ -905,14 +1189,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: color-mix(in srgb, var(--surface-panel) 80%, var(--surface-reader));
 }
 
-.outline-item svg { flex: none; margin-top: 1px; color: color-mix(in srgb, var(--accent) 70%, transparent); }
-.outline-item.level-1 { color: var(--text-secondary); font-weight: 780; }
-.outline-item.level-2 { padding-left: 15px; }
-.outline-item.level-3 { padding-left: 27px; font-size: 10px; }
+/* The page title leads in the accent; sections step down through the inks. */
+.outline-item svg { flex: none; margin-top: 2px; color: currentColor; }
+.outline-item.level-1 { color: var(--accent); font-weight: 700; }
+.outline-item.level-2 { padding-left: 20px; color: var(--text-secondary); }
+.outline-item.level-3 { padding-left: 32px; font-size: 11px; }
 .empty-outline { padding: 8px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 .outline-tip { display: flex; gap: 8px; padding: 12px 8px 3px; color: var(--text-muted); border-top: 1px solid var(--line-hairline); }
 .outline-tip svg { flex: none; margin-top: 1px; color: var(--accent); }
 .outline-tip p { margin: 0; font-size: 10px; line-height: 1.48; }
+
+/* The agent panel's region: the grid's fourth track, docked right of the
+   outline. Its contents (src/agent/*) style themselves in AgentPanel.css. */
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 12px 11px;
+  overflow: hidden;
+  background: var(--surface-panel);
+  border-left: 1px solid var(--line-hairline);
+}
 
 /* Collapsed panels are removed from layout entirely rather than hidden with
    opacity, so they cannot hold keyboard focus while invisible. The column
@@ -925,72 +1223,97 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sidebar { grid-column: 1; }
 .workspace { grid-column: 2; }
 .outline { grid-column: 3; }
+.agent-panel { grid-column: 4; }
 
 .sidebar-collapsed .sidebar { display: none; }
 .outline-collapsed .outline { display: none; }
+.agent-collapsed .agent-panel { display: none; }
 
-/* Tiled windows are routinely far narrower than a floating one. Each step below
-   must stay fully operable, never leave a visible-but-inert control. */
-@media (max-width: 1120px) {
-  /* The outline loses its column and becomes an overlay instead. */
-  .app-shell { position: relative; --col-sidebar: 230px; --col-outline: 0px; }
-  /* Overlays the canvas, never the header — the header holds Save. */
-  .app-shell:not(.outline-collapsed) .outline {
-    position: absolute;
-    z-index: 4;
-    top: var(--header-h);
-    right: 0;
-    bottom: 0;
-    display: flex;
-    width: 240px;
-    box-shadow: -12px 0 28px rgba(0, 0, 0, .22);
-  }
-  .view-switcher button span { display: none; }
-  .view-switcher button { padding: 0 7px; }
+/* ---------------------------------------------------------------------------
+   Breakpoints (Mac AppModel.layoutWidth / widthChanged / effectiveView).
+
+   These are NOT media queries. A breakpoint has to compare against the layout
+   width — the window less a docked agent panel — and a media query only knows
+   the window. useResponsiveChrome measures that width and publishes the result
+   as tokens in `data-chrome` on the root element:
+
+     outline-overlay   layout <= 1120   the outline overlays the canvas
+     narrow            layout <= 820    a split draws one pane
+     status-compact    layout <= 700    the status bar keeps the word count
+     small             layout <= 560    the reader tightens its gutters
+     agent-overlay     the agent panel is open but cannot dock
+
+   Zoom needs no handling here: Electron's page zoom shrinks the CSS viewport,
+   so the measured width is already "window ÷ zoom".
+
+   Every prefix is wrapped in :where() so it adds no specificity. That keeps
+   these rules exactly as strong as the @media rules they replaced, which is
+   what lets the two-class collapse block at the end of the file keep winning.
+
+   Each step must stay fully operable, never leave a visible-but-inert control.
+   --------------------------------------------------------------------------- */
+
+/* The outline loses its column and becomes an overlay instead. */
+:where(:root[data-chrome~='outline-overlay']) .app-shell { --col-outline: 0px; }
+/* Overlays the canvas, never the header — the header holds Save. An absolutely
+   positioned grid child is placed against its grid AREA, so the overlay spans
+   every track; pinned to track 3 it would be measured from a 0px-wide cell. */
+:where(:root[data-chrome~='outline-overlay']) .app-shell:not(.outline-collapsed) .outline {
+  position: absolute;
+  z-index: 4;
+  grid-column: 1 / -1;
+  top: var(--header-h);
+  /* Left of a docked agent panel; 0 when it is collapsed or overlaying. */
+  right: var(--col-agent);
+  bottom: 0;
+  display: flex;
+  width: 240px;
+  box-shadow: -12px 0 28px var(--shadow-overlay);
 }
 
-/* Above this width the outline is a docked column, so the header toggle is the
-   affordance and the in-panel close button would be a second, redundant one.
-   The toggle itself is NEVER hidden: it is the only control that can reopen the
-   outline, and hiding it once made closing the outline a one-way door. */
-@media (min-width: 1121px) { .outline-heading .icon-button { display: none; } }
+/* While the outline is a docked column the header toggle is the affordance and
+   the in-panel close button would be a second, redundant one. The toggle
+   itself is NEVER hidden, at any header stage: it is the only control that can
+   reopen the outline, and hiding it once made closing the outline a one-way
+   door. */
+:where(:root:not([data-chrome~='outline-overlay'])) .outline-heading .icon-button { display: none; }
 
-@media (max-width: 820px) {
-  /* Sidebar is off by default here; the hamburger brings it back as a column. */
-  .app-shell { --col-sidebar: 0px; }
-  .app-shell.sidebar-open { --col-sidebar: 230px; }
-  :root { --header-h: 46px; }
-  .document-header { min-height: 46px; gap: 8px; padding: 7px 10px; }
-  .document-identity h1 { max-width: 180px; font-size: 13px; }
-  .document-identity p { display: none; }
-  .save-button kbd { display: none; }
-  .save-as-button { display: none; }
-  .view-split { grid-template-columns: minmax(0, 1fr); }
-  .view-split .editor-panel { display: none; }
-  .reader-panel, .view-split .reader-panel { padding: 28px 22px 44px; border-right: 0; }
-  .markdown-prose { font-size: 17px; }
-  .markdown-prose h1 { font-size: 32px; }
+/* Too narrow to dock (the document beside it would drop under the app's 480px
+   minimum), the agent panel overlays the canvas like the compact outline: over
+   the canvas, never the header. It keeps its own close control. */
+:where(:root[data-chrome~='agent-overlay']) .app-shell { --col-agent: 0px; }
+:where(:root[data-chrome~='agent-overlay']) .app-shell:not(.agent-collapsed) .agent-panel {
+  position: absolute;
+  z-index: 5;
+  grid-column: 1 / -1;
+  top: var(--header-h);
+  right: 0;
+  bottom: 0;
+  width: min(340px, 100%);
+  box-shadow: -12px 0 28px var(--shadow-overlay);
 }
+
+/* A split that no longer has room for two panes draws the reader alone. The
+   view itself is unchanged — widen the window and the split is back. */
+:where(:root[data-chrome~='narrow']) .view-split { grid-template-columns: minmax(0, 1fr); }
+:where(:root[data-chrome~='narrow']) .view-split .editor-panel { display: none; }
+:where(:root[data-chrome~='narrow']) .view-split .reader-panel { border-right: 0; }
+
+:where(:root[data-chrome~='status-compact']) .statusbar .statusbar-optional { display: none; }
 
 /* Quarter-tile territory: the document keeps the whole window. */
-@media (max-width: 560px) {
-  .file-tab { display: none; }
-  .save-button span.save-label { display: none; }
-  .statusbar .statusbar-optional { display: none; }
-  .reader-panel, .view-split .reader-panel { padding: 20px 16px 32px; }
-  .markdown-prose { font-size: 16px; }
-  .markdown-prose h1 { font-size: 27px; margin-bottom: 20px; }
-}
+:where(:root[data-chrome~='small']) .reader-panel { padding: 28px 22px 56px; }
 
-/* Short tiled windows: reclaim vertical space from chrome first. */
+/* Short tiled windows: reclaim vertical space from chrome first. The status
+   line is clipped rather than removed so it keeps announcing. */
 @media (max-height: 460px) {
   :root { --header-h: 44px; }
-  .document-header { min-height: 44px; padding: 6px 10px; }
-  .document-identity p { display: none; }
+  .document-identity h1 { -webkit-line-clamp: 1; }
+  .document-identity p { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
   .outline-tip { display: none; }
-  .reader-panel, .view-split .reader-panel { padding-top: 20px; }
+  .reader-panel { padding-top: 20px; }
   .markdown-prose h1 { font-size: 28px; margin-bottom: 16px; }
-  .markdown-prose h2 { margin-top: 1.4em; }
+  .markdown-prose h2 { --gap-top: 1.4em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1008,32 +1331,30 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    --------------------------------------------------------------------------- */
 .app-shell.sidebar-collapsed { --col-sidebar: 0px; }
 .app-shell.outline-collapsed { --col-outline: 0px; }
+.app-shell.agent-collapsed { --col-agent: 0px; }
 
 /* Focus mode: the document gets the window. Only the reading or writing
    surface and the save controls survive. Declared after the collapse rules
    so it wins outright whatever the panels' own state happens to be. */
-.app-shell.focus-mode { --col-sidebar: 0px; --col-outline: 0px; }
+.app-shell.focus-mode { --col-sidebar: 0px; --col-outline: 0px; --col-agent: 0px; --header-h: 44px; }
 .app-shell.focus-mode .sidebar,
 .app-shell.focus-mode .outline,
+.app-shell.focus-mode .agent-panel,
 .app-shell.focus-mode .statusbar { display: none; }
 .app-shell.focus-mode .document-header {
-  min-height: 44px;
-  padding: 6px 12px;
+  padding: 0 12px;
   background: var(--surface-reader);
   border-bottom-color: transparent;
 }
 .app-shell.focus-mode .document-identity h1 {
   color: var(--text-muted);
-  font-family: 'Manrope Variable', sans-serif;
+  font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 700;
 }
 .app-shell.focus-mode .editor-panel,
 .app-shell.focus-mode .reader-panel { background: var(--surface-reader); }
 .app-shell.focus-mode .editor-bar { display: none; }
-/* Save controls are part of the mode's contract, so they survive the narrow
-   breakpoint that otherwise drops Save as. */
-.app-shell.focus-mode .save-as-button { display: inline-block; }
 .app-shell.focus-mode .view-split .reader-panel { border-right: 1px solid var(--line-hairline); }
 /* Focus mode should give the document more room than the regular canvas. Keep
    a calm inset, but never replace the responsive padding with a wider gutter. */
@@ -1042,12 +1363,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell.focus-mode.split-focus .editor-panel textarea,
 .app-shell.focus-mode.split-focus .reader-panel { padding: clamp(18px, 3vw, 48px) clamp(14px, 3vw, 48px); }
 
-/* A window too narrow for a real split normally collapses to the reader, which
+/* A layout too narrow for a real split normally collapses to the reader, which
    is right everywhere except here: focus *writing* must keep the writing
    surface. Invert the collapse rather than dropping the editor. */
-@media (max-width: 820px) {
-  .app-shell.focus-mode.split-focus .editor-panel { display: grid; }
-  .app-shell.focus-mode.split-focus .reader-panel { display: none; }
-  .app-shell.focus-mode .editor-panel textarea,
-  .app-shell.focus-mode .reader-panel { padding: 20px 16px 32px; }
-}
+:where(:root[data-chrome~='narrow']) .app-shell.focus-mode.split-focus .editor-panel { display: grid; }
+:where(:root[data-chrome~='narrow']) .app-shell.focus-mode.split-focus .reader-panel { display: none; }
+:where(:root[data-chrome~='narrow']) .app-shell.focus-mode .editor-panel textarea,
+:where(:root[data-chrome~='narrow']) .app-shell.focus-mode .reader-panel { padding: 20px 16px 32px; }

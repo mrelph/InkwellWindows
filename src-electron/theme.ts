@@ -137,7 +137,10 @@ export const parseColorsToml = (text: string): ColorsTable => {
       const closing = rawValue.indexOf(quote, 1)
       table[key] = closing === -1 ? rawValue.slice(1) : rawValue.slice(1, closing)
     } else {
-      table[key] = rawValue
+      /* TOML: an unquoted value ends at a ` #` comment. The value itself may
+         start with `#` (a hex color), so only whitespace + `#` starts one. */
+      const value = rawValue.replace(/\s+#.*$/, '').trim()
+      if (value) table[key] = value
     }
   }
   return table

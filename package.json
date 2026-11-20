@@ -13,7 +13,8 @@
     "dev": "concurrently -k \"tsc -p tsconfig.electron.json --watch\" \"vite --host 127.0.0.1\" \"wait-on tcp:5173 file:dist-electron/main.js && electron . --dev-server=http://127.0.0.1:5173\"",
     "build": "tsc -p tsconfig.electron.json && vite build",
     "preview": "corepack pnpm build && electron .",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
     "package:windows": "corepack pnpm build && electron-builder --win nsis --x64",
     "package:windows:arm64": "corepack pnpm build && electron-builder --win nsis --arm64",
     "package:windows:portable": "corepack pnpm build && electron-builder --win portable --x64",
@@ -44,13 +45,17 @@
       "icon": "build/icon.ico",
       "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
     },
+    "portable": {
+      "artifactName": "Inkwell-Portable-${version}-${arch}.${ext}"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Inkwell"
+      "shortcutName": "Inkwell",
+      "artifactName": "Inkwell-Setup-${version}-${arch}.${ext}"
     },
     "linux": {
       "target": ["AppImage"],
@@ -86,6 +91,7 @@
     "electron-builder": "^25.1.8",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
+    "vitest": "^3.2.7",
     "wait-on": "^8.0.1"
   }
 }

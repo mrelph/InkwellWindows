@@ -64,17 +64,29 @@ identify the publisher.
 
 | Shortcut | Action |
 | --- | --- |
+| `Ctrl+N` | New note |
 | `Ctrl+O` | Open Markdown file(s) |
 | `Ctrl+Shift+O` | Add a folder to the library |
-| `Ctrl+S` | Save the active document |
-| `Ctrl+Shift+S` | Save as |
-| `Ctrl+N` | New note |
+| `Ctrl+S` / `Ctrl+Shift+S` | Save / Save as |
+| `Ctrl+W` | Close document (drafts, recent and Ephy notes) |
+| `Ctrl+Shift+D` | Duplicate |
+| `Ctrl+Shift+R` | Show in Explorer |
+| `Ctrl+Alt+C` | Copy path |
+| `Ctrl+Delete` | Move to Recycle Bin |
+| `Ctrl+F` / `Ctrl+H` | Find / Replace |
+| `F3` / `Shift+F3` | Find next / previous |
+| `Ctrl+E` | Use selection for find |
+| `Ctrl+Shift+L` | Find in documents |
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Read / Split / Write view |
-| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Zoom in / out / reset |
-| `Ctrl+Shift+F` | Focus writing |
 | `Ctrl+B` | Toggle the library |
 | `Ctrl+\` | Toggle the outline |
+| `Ctrl+Shift+F` | Focus writing |
+| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Zoom in / out / actual size |
+| `F11` | Full screen |
+| `Ctrl+Alt+A` | Show / hide the agent panel |
+| `Ctrl+Shift+E` | Open from Ephy (when Ephy is enabled) |
 | `Escape` | Leave focus writing, otherwise close the outline |
+| `Alt` | Reveal the menu bar (hidden by default) |
 
 You can also pass a file directly:
 
@@ -100,11 +112,15 @@ window and adds that file to the library.
 
 ## Updates
 
-Once a day, Inkwell optionally checks the upstream GitHub tags for a newer
-version. The check sends no document names, contents, or filesystem paths and
-fails silently when offline.
+Once a day, Inkwell optionally checks the GitHub Releases of
+`mrelph/InkwellWindows` for a newer version. The check sends no document
+names, contents, or filesystem paths and fails silently when offline. When an
+update is available the status bar offers it; the installer is downloaded,
+checked against its published SHA-256, and run when you choose Restart to
+update. Help ▸ Check for Updates… always answers in a message box, and Help ▸
+Check Automatically turns the daily check off.
 
-To disable it for future terminals and launches:
+To disable it for future terminals and launches regardless of the menu setting:
 
 ```powershell
 setx INKWELL_NO_UPDATE_CHECK 1
