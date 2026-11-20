@@ -28,7 +28,25 @@ workstreams) and the integration pass, checked by `pnpm typecheck`, `pnpm test`,
   open the release page instead. The manual check answers in a native message
   box (Install / Later / Skip This Version), like Mac's alert.
 - **No Window menu.** Windows' native frame and taskbar own window management;
-  the menu is File / Edit / View / Integrations / Help, always visible like the Mac menu bar.
+  the menu is File / Edit / View / Integrations / Help.
+- **An Inkwell title bar and header controls instead of a visible menu bar**
+  (implementation note). A stock Win32 menu strip above the app read as
+  foreign, so on Windows the window is `titleBarStyle: 'hidden'` with a
+  `titleBarOverlay`: the document header is the title bar (drag region,
+  double-click to maximize, system menu, snap), stretched across the outline
+  and agent columns to the window's right edge, and the native minimize /
+  maximize / close buttons are overlaid in its corner, repainted with the
+  theme's chrome surface on every `theme:changed` (the reading surface in
+  focus mode). The header carries what the menu bar made discoverable: the
+  agent-panel toggle (agent on), an Ephy menu (Ephy on) and a Settings gear —
+  Integrations (Agent, Include current note, Add Notes Folder…, Ephy),
+  Spelling, Updates, Appearance…, About, and "All menu commands…". Electron
+  cannot draw a menu bar in a hidden-title-bar window, so Alt does not reveal
+  a strip; instead a tap of Alt, F10 or "All menu commands…" pops the whole
+  application menu up (`menu:popup`), mnemonics and arrow keys included. The
+  menu stays registered and is still the one list of every command. Linux is
+  unchanged (frameless; where a menu bar exists it auto-hides and Alt reveals
+  it).
 - **Jump list instead of the Dock menu:** Recent files plus a "New note" task
   (`--new-note`).
 - **h4–h6 stay uppercase**, which matches Mac's actual source and screenshots
@@ -53,7 +71,11 @@ workstreams) and the integration pass, checked by `pnpm typecheck`, `pnpm test`,
   folders only from Add Folder or the library.json it loaded at startup
   (never a drive root, the home folder or a folder holding it — Mac's sandbox
   refuses home and `/` for the agent), and every IPC sender must be the app's
-  own page. The agent and Ephy can be enabled only from the Integrations menu.
+  own page. The agent and Ephy can be enabled only by the person, in main: from
+  the Integrations menu, or from Settings, where the page can only *request*
+  it (`agent:request-enable` / `ephy:request-enable`) and main asks in a
+  native window-modal dialog (Turn On / Cancel, Cancel the default, one
+  dialog at a time). There is no renderer setter; turning one off is direct.
 - **Footnotes** render (Mac lacks them): kept.
 
 ## 1. Confirmed defects (fix first)
@@ -145,7 +167,7 @@ View ▸ Reading Font, built from the renderer's list.
 
 | Feature | Win | Notes |
 |---|---|---|
-| Application menu | ✅ | File / Edit (Find, Spelling) / View / Integrations / Help, Alt-revealed, display-only accelerators |
+| Application menu | ✅ | File / Edit (Find, Spelling) / View / Integrations / Help, display-only accelerators. Not drawn as a bar on Windows: popped up by Alt, F10 or Settings ▸ All menu commands…; the header and Settings carry the everyday items |
 | File association, Reveal in Explorer, Recycle Bin | ✅ | — |
 | Update check, download, verify, install, relaunch, toggle | ✅ | See notes; Help ▸ Check Automatically (env var still wins) |
 | Test / snapshot launch args | ❌ | Mac's `-InkwellStateDir`, `-InkwellSnapshot`, … not ported; verification uses `--user-data-dir` + CDP / Node inspector instead (CLAUDE.md) |
@@ -356,13 +378,18 @@ implemented / cache-only today.
 | `window:toggle-fullscreen`, `window:get-fullscreen`, `window:fullscreen-changed` | → / → / ← | none / `boolean` / `boolean` | main.ts | done |
 | `menu:state` | → send | `MenuState` | menu.ts (A) | recorded |
 | `menu:command` | ← | `{ id: CommandId, arg? }` | menu.ts (A) | wired (`sendMenuCommand`) |
+| `menu:popup` | → send | `{ x, y }?` (CSS px; validated, zoom-scaled, clamped) | ipc/settingsRequests.ts | done (pops the application menu up; one at a time) |
+| `app:about` | → send | none | ipc/settingsRequests.ts | done (main's About box) |
 | `update:get`, `update:dismiss`, `update:open`, `update:available` | → / → / → / ← | as before | ipc/update.ts (D) | done |
 | `update:check` | → invoke | none → `UpdateCheckResult` | D | stub (cache only) |
 | `update:install` | → invoke | none → `UpdateInstallResult` | D | stub |
 | `update:status` | ← | `UpdateStatus` (`idle` / `available` / `downloading{progress}` / `ready` / `error`) | D | emitted by the install path |
 | `update:get-auto-check` / `update:set-auto-check` | → invoke | none / `boolean` → `boolean` | D | done (settings.json; env var still wins) |
 | `spellcheck:get` / `spellcheck:set` | → invoke | none / `boolean` → `boolean` | contextMenu.ts (B) | done (toggle); context menu stub |
-| `agent:get-enabled` | → invoke | `boolean` | acp (G) | done (read only: enabling is main-only, Integrations menu) |
+| `agent:get-enabled` | → invoke | `boolean` | acp (G) | done (read only: there is no setter) |
+| `agent:request-enable` / `ephy:request-enable` | → invoke | none → `boolean` (enabled afterwards) | ipc/settingsRequests.ts | done (main confirms in a native dialog; refused while one is open and for 2 s after a Cancel) |
+| `agent:disable` / `ephy:disable` | → invoke | none → `boolean` | ipc/settingsRequests.ts | done (direct: only removes capability) |
+| `agent:include-note-changed` | ← | `boolean` | main.ts | done |
 | `agent:list-harnesses` | → invoke | none → `AgentHarnessInfo[]` | G | stub (none installed) |
 | `agent:open-harness-help` | → send | `AgentHarnessId` | G | done |
 | `agent:get-state` | → invoke | none → `AgentSessionState` | G | stub |
@@ -372,7 +399,7 @@ implemented / cache-only today.
 | `agent:event` | ← | `AgentEvent` (`reset` / `entry{AgentTranscriptEntry}` / `state`) | G | stub |
 | `agent:permission-request` / `agent:permission-response` | ← / → | `AgentPermissionRequest` (kind `tool` or `write`, options, path, `DiffLine[]`) / `{ requestId, optionId or null }` | G | stub |
 | `agent:buffer-request` / `agent:buffer-response` | ← / → | read or write an OPEN note's buffer (`AgentBufferRequest` / `AgentBufferResponse`) | G | stub |
-| `ephy:get-enabled` | → invoke | `boolean` | ephy (H) | done (read only: enabling is main-only, Integrations menu) |
+| `ephy:get-enabled` | → invoke | `boolean` | ephy (H) | done (read only: there is no setter) |
 | `ephy:status` | → invoke | none → `EphyStatus { enabled, cliFound, cliPath?, sessionValid, message? }` | H | stub |
 | `ephy:list` | → invoke | `{ cursor?, limit? (100) }` → `EphyResult<EphyListPage>` | H | stub |
 | `ephy:open` / `ephy:get-latest` | → invoke | `id` / `{ id, version? }` → `EphyResult<EphyDocument>` / `EphyResult<EphyLatest>` | H | stub |

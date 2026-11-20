@@ -9,8 +9,16 @@ import { addNotesFolder, isAgentEnabled, needsNotesFolder, onNotesFolderNeedChan
 import { isEphyEnabled, setEphyEnabled } from './ephy/index'
 
 /* The application menu (File / Edit / View / Integrations / Help), Open Recent
-   + Clear, the taskbar jump list (app.addRecentDocument), and the Alt-revealed
-   menu bar (the window sets autoHideMenuBar). Owned by the menu workstream (A).
+   + Clear, and the taskbar jump list (app.addRecentDocument). Owned by the
+   menu workstream (A).
+
+   The menu bar is not drawn. On Windows the window has Inkwell's own title bar
+   (main.ts, `titleBarStyle: 'hidden'`), and Electron cannot show a menu bar in
+   such a window at all; the header's controls and Settings popover carry the
+   everyday items, and the whole menu pops up from Settings ▸ All menu
+   commands…, a tap of Alt, or F10 (`menu:popup`, ipc/settingsRequests.ts).
+   Elsewhere the bar auto-hides and Alt reveals it. The menu stays registered
+   either way: it is the one list of every command.
 
    - The renderer pushes MenuState on `menu:state`; the menu is rebuilt from it,
      debounced so typing (which flips isDirty and little else) never churns it.
@@ -92,7 +100,8 @@ export function sendMenuCommand(id: CommandId, arg?: string): void {
   window.webContents.send('menu:command', command)
 }
 
-function showAbout(): void {
+/** Help ▸ About Inkwell, and Settings ▸ About Inkwell (`app:about`). */
+export function showAbout(): void {
   const options = {
     type: 'info' as const,
     title: 'About Inkwell',
@@ -428,9 +437,9 @@ export function registerMenu(window: BrowserWindow): void {
   let resolve: () => void = () => undefined
   const promise = new Promise<void>((done) => { resolve = done })
   rendererReady = { promise, resolve }
-  // Always shown, like the Mac menu bar, so Integrations is discoverable.
-  window.setAutoHideMenuBar(false)
-  window.setMenuBarVisibility(true)
+  /* Never a stock menu strip above the app: hidden until Alt where the
+     platform can show one, and popped up on request where it cannot. */
+  window.setAutoHideMenuBar(true)
   if (registered) return
   registered = true
   rebuild()

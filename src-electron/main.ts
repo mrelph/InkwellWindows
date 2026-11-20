@@ -1,17 +1,19 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import path from 'node:path'
-import { isAgentEnabled, registerAgentIpc, shutDownAgent } from './acp'
+import { getAgentHarness, isAgentEnabled, registerAgentIpc, setAgentEnabled, shutDownAgent } from './acp'
+import { harnessDefinition } from './acp/harness'
 import { developmentServerUrl, isAppUrl } from './appOrigin'
 import { registerAssetProtocol, registerAssetSchemes } from './assets'
 import { isSpellcheckEnabled, registerContextMenu } from './contextMenu'
-import { isEphyEnabled, registerEphyIpc } from './ephy'
+import { isEphyEnabled, registerEphyIpc, setEphyEnabled } from './ephy'
 import { documentsFromArgv } from './fileStore'
 import { initialiseDocumentTrust, registerDocumentIpc } from './ipc/documents'
+import { registerSettingsRequests } from './ipc/settingsRequests'
 import { registerUpdateIpc, scheduleUpdateCheck } from './ipc/update'
 import { bindAppWindow, handle, on } from './ipcGuard'
-import { registerMenu, sendMenuCommand, whenRendererReady } from './menu'
+import { getMenuState, onMenuState, registerMenu, sendMenuCommand, showAbout, whenRendererReady } from './menu'
 import { refreshNetworkDrives } from './networkDrives'
-import { onSettingChange, type Settings } from './settings'
+import { getSetting, onSettingChange, type Settings } from './settings'
 import { getAppearance, resolveTheme, setAppearance, watchTheme, type ThemeTokens } from './theme'
 import { loadState } from './state'
 import { trustDocuments } from './trustedDocuments'
@@ -45,11 +47,42 @@ const toThemePayload = (tokens: ThemeTokens) => {
 
 let mainWindow: BrowserWindow | null = null
 
+/* Windows: Inkwell draws the title bar. The app header is the top row of the
+   window (it carries the drag region), and the native minimize / maximize /
+   close buttons are kept as a Window Controls Overlay in its top-right corner,
+   so snapping, the snap-layouts flyout, the system menu, accessibility and
+   high-DPI behavior stay Windows' own. Linux stays frameless (Hyprland owns
+   that chrome). */
+const INKWELL_TITLE_BAR = process.platform === 'win32'
+/** Windows' own caption height; shorter than the header at every zoom. */
+const OVERLAY_HEIGHT = 32
+
+type Theme = ReturnType<typeof toThemePayload>
+let lastTheme: Theme | null = null
+
+/* The overlay is painted with the surface the header has: chrome normally,
+   the reading surface in focus mode, where the header goes quiet. */
+const titleBarOverlay = (theme: Theme, focusMode: boolean) => ({
+  color: theme.colors[focusMode ? '--surface-reader' : '--surface-chrome'] ?? theme.colors['--surface-chrome'] ?? '#f7f3ec',
+  symbolColor: theme.colors['--text-primary'] ?? '#24211c',
+  height: OVERLAY_HEIGHT
+})
+
 /* The window background is the chrome color, so a theme or mode switch (and
-   the frame before the page paints) never flashes the old palette. */
-const paintWindow = (window: BrowserWindow, theme: ReturnType<typeof toThemePayload>) => {
+   the frame before the page paints) never flashes the old palette. The
+   caption buttons follow the same theme. */
+const paintWindow = (window: BrowserWindow, theme: Theme) => {
+  lastTheme = theme
+  if (window.isDestroyed()) return
   const color = theme.colors['--surface-chrome']
-  if (color && !window.isDestroyed()) window.setBackgroundColor(color)
+  if (color) window.setBackgroundColor(color)
+  if (INKWELL_TITLE_BAR) {
+    try {
+      window.setTitleBarOverlay(titleBarOverlay(theme, getMenuState()?.focusMode === true))
+    } catch (error) {
+      console.warn('Could not repaint the title bar overlay', error)
+    }
+  }
 }
 let stopWatchingTheme: (() => void) | null = null
 
@@ -72,6 +105,7 @@ async function argvDocuments(argv: readonly string[], workingDirectory?: string)
    it on its `*-changed` channel. menu.ts rebuilds from the same signal. */
 const SETTING_EVENTS: Partial<Record<keyof Settings, { channel: string; value: () => boolean }>> = {
   agentEnabled: { channel: 'agent:enabled-changed', value: isAgentEnabled },
+  agentIncludeNote: { channel: 'agent:include-note-changed', value: () => getSetting('agentIncludeNote') },
   ephyEnabled: { channel: 'ephy:enabled-changed', value: isEphyEnabled },
   spellcheck: { channel: 'spellcheck:changed', value: isSpellcheckEnabled },
   autoUpdateCheck: { channel: 'update:auto-check-changed', value: getAutoCheck }
@@ -94,11 +128,14 @@ async function createWindow() {
        tiles cleanly instead of forcing the compositor to float it. */
     minWidth: 480,
     minHeight: 360,
-    /* Hyprland owns Linux window chrome. Windows keeps its native frame so
-       moving, snapping, maximizing, and system-menu behavior all work exactly
-       as users expect. */
+    /* Hyprland owns Linux window chrome. Windows keeps its native frame
+       behavior (move, snap, maximize, system menu) but not its title strip:
+       the header is the title bar, with the native caption buttons overlaid. */
     frame: process.platform !== 'linux',
-    autoHideMenuBar: false,
+    ...(INKWELL_TITLE_BAR ? { titleBarStyle: 'hidden' as const, titleBarOverlay: titleBarOverlay(theme, false) } : {}),
+    /* No stock menu strip. Where a menu bar can exist, Alt reveals it; on
+       Windows the menu pops up instead (menu.ts). */
+    autoHideMenuBar: true,
     backgroundColor: theme.colors['--surface-chrome'] ?? '#f7f3ec',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -108,6 +145,7 @@ async function createWindow() {
   })
 
   mainWindow = window
+  lastTheme = theme
   /* Every IPC handler answers only this window's main frame showing the app. */
   bindAppWindow(window, (url) => isAppUrl(url, { indexFile: INDEX_FILE, devServer }))
 
@@ -248,6 +286,23 @@ if (!app.requestSingleInstanceLock()) {
     onSettingChange((key) => {
       const event = SETTING_EVENTS[key]
       if (event && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(event.channel, event.value())
+    })
+
+    /* Settings popover: enabling an integration is a request main confirms
+       natively; see ipc/settingsRequests.ts. */
+    registerSettingsRequests({
+      window: () => mainWindow,
+      agent: { isEnabled: isAgentEnabled, setEnabled: setAgentEnabled, harnessTitle: () => harnessDefinition(getAgentHarness()).title },
+      ephy: { isEnabled: isEphyEnabled, setEnabled: setEphyEnabled },
+      showAbout
+    })
+
+    /* Focus mode changes the header's surface; the caption buttons follow. */
+    let focusPainted = false
+    onMenuState((menuState) => {
+      if (menuState.focusMode === focusPainted) return
+      focusPainted = menuState.focusMode
+      if (mainWindow && lastTheme) paintWindow(mainWindow, lastTheme)
     })
 
     on('window:toggle-fullscreen', () => {

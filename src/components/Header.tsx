@@ -1,15 +1,27 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  BookOpen, Bot, Check, ChevronDown, Ellipsis, FileText, Maximize2, Minimize2, PanelLeft,
-  PanelRightClose, PanelRightOpen, PencilLine, SaveAll, SplitSquareHorizontal, Type, ZoomIn, ZoomOut
+  BookOpen, Bot, Check, ChevronDown, Cloud, Ellipsis, FileText, Maximize2, Minimize2, PanelLeft,
+  PanelRightClose, PanelRightOpen, PencilLine, SaveAll, Settings, SplitSquareHorizontal, Type, ZoomIn, ZoomOut
 } from 'lucide-react'
 import { headerStageFlags, useHeaderStage, type ResponsiveChrome } from '../app/useResponsiveChrome'
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, ZOOM_STEP } from '../lib/limits'
 import { AppearancePopover, type AppearanceProps } from './AppearancePopover'
+import { SettingsPopover, type SettingsProps } from './SettingsPopover'
 
-/* The one document header: identity on the left, actions on the right. Not a
-   titlebar — no -webkit-app-region. Owned by the design workstream (E). Every
-   action is a prop from App; the header never reaches into state itself.
+/* The one document header: identity on the left, actions on the right. Owned
+   by the design workstream (E). Every action is a prop from App; the header
+   never reaches into state itself.
+
+   On Windows this row is also the title bar (`data-titlebar='overlay'` on the
+   root, set by App): styles.css makes its background the drag region, every
+   control `no-drag`, stretches it across the outline and agent columns to the
+   window's right edge and reserves the corner the native caption buttons
+   overlay. Nothing here knows about that; the reserve is padding, so the
+   stage measurement below already counts it.
+
+   The integrations sit here too, in place of a menu strip: the agent-panel
+   toggle (while the agent is on), an Ephy menu (while Ephy is on) and
+   Settings, the gear, which is where either is turned on.
 
    When the row runs out of room it steps down through Mac's eight stages
    (ContentView.DocumentHeader + ChromeLayout.HeaderStage) and never clips:
@@ -17,7 +29,11 @@ import { AppearancePopover, type AppearanceProps } from './AppearancePopover'
    compact → iconSave. Three controls never move into the ⋯ menu at any stage:
    the library, outline and agent-panel toggles are the only ways back to a
    closed panel from the header. The agent toggle shows only while the agent
-   is enabled (Mac), and Save reads "Save to Ephy" on an Ephy note (Mac). */
+   is enabled (Mac), and Save reads "Save to Ephy" on an Ephy note (Mac).
+   Ephy and Settings join Appearance and Focus in the ⋯ menu from `overflow`
+   on, and in focus mode, where the row stays quiet. */
+
+export type EphyCommand = 'ephyOpen' | 'ephySave' | 'ephySaveAsNew' | 'ephyOpenInBrowser' | 'ephyGetLatest'
 
 export type HeaderProps = {
   title: string
@@ -30,10 +46,14 @@ export type HeaderProps = {
   /** Integrations ▸ Agent is on: the header carries the agent-panel toggle. */
   agentEnabled: boolean
   agentOpen: boolean
+  /** Integrations ▸ Ephy is on: the header carries the Ephy menu. */
+  ephyEnabled: boolean
   /** The active document is an Ephy note, so Save publishes to Ephy. */
   isEphyNote: boolean
   chrome: ResponsiveChrome
   appearance: AppearanceProps
+  settings: SettingsProps
+  onEphy: (command: EphyCommand) => void
   onToggleSidebar: () => void
   onToggleFocus: () => void
   onToggleOutline: () => void
@@ -99,6 +119,17 @@ function HeaderMenu({ label, title, className, trigger, items }: {
     }
   }, [open])
 
+  /* The list hangs right-aligned from its button. Where the header keeps
+     clear of the window controls the button sits further left, so in a narrow
+     window the list would run off the left edge: nudge it back in. */
+  useLayoutEffect(() => {
+    const element = list.current
+    if (!open || !element) return
+    element.style.transform = ''
+    const overhang = 8 - element.getBoundingClientRect().left
+    if (overhang > 0) element.style.transform = `translateX(${Math.ceil(overhang)}px)`
+  }, [open])
+
   const moveFocus = (step: number) => {
     const options = Array.from(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
     if (!options.length) return
@@ -158,16 +189,28 @@ function HeaderMenu({ label, title, className, trigger, items }: {
 }
 
 export function Header(props: HeaderProps) {
-  const { title, notice, hasDocument, view, focusMode, sidebarOpen, outlineOpen, agentEnabled, agentOpen, isEphyNote, appearance } = props
+  const { title, notice, hasDocument, view, focusMode, sidebarOpen, outlineOpen, agentEnabled, agentOpen, ephyEnabled, isEphyNote, appearance, settings } = props
   const header = useRef<HTMLElement>(null)
   /* Focus mode changes which controls the row holds, and the selected view is
      drawn bolder than the others, so either resets the measurements. The
      title and notice are elastic and do not. */
-  const stage = useHeaderStage(header, `${focusMode ? 'focus' : 'normal'}|${view}|${isEphyNote ? 'ephy' : 'file'}|${agentEnabled ? 'agent' : ''}`)
+  const stage = useHeaderStage(header, `${focusMode ? 'focus' : 'normal'}|${view}|${isEphyNote ? 'ephy' : 'file'}|${agentEnabled ? 'agent' : ''}|${ephyEnabled ? 'ephyMenu' : ''}`)
   const saveLabel = isEphyNote ? 'Save to Ephy' : 'Save'
   const flags = headerStageFlags(stage)
   const current = VIEWS.find((item) => item.mode === view) ?? VIEWS[0]
   const CurrentIcon = current.icon
+
+  /* File ▸ Ephy, as the application menu has it. */
+  const ephyItems: MenuItem[] = ephyEnabled ? [
+    { key: 'ephyOpen', label: 'Open from Ephy…', hint: 'Ctrl+Shift+E', icon: <Cloud size={15} strokeWidth={1.7} />, onSelect: () => props.onEphy('ephyOpen') },
+    { key: 'ephySave', label: 'Save to Ephy', disabled: !hasDocument, onSelect: () => props.onEphy('ephySave') },
+    { key: 'ephySaveAsNew', label: 'Save as New Ephy Artifact…', disabled: !hasDocument, onSelect: () => props.onEphy('ephySaveAsNew') },
+    { key: 'ephyOpenInBrowser', label: 'Open in Browser', separated: true, disabled: !isEphyNote, onSelect: () => props.onEphy('ephyOpenInBrowser') },
+    { key: 'ephyGetLatest', label: 'Get Latest', disabled: !isEphyNote, onSelect: () => props.onEphy('ephyGetLatest') }
+  ] : []
+  /* Focus mode keeps the row quiet: no Ephy or Settings buttons. They stay
+     reachable from the ⋯ menu whenever it is drawn, and from Alt / F10. */
+  const tucked = flags.usesOverflow || focusMode
 
   const overflowItems: MenuItem[] = [
     ...(flags.isCompact
@@ -179,7 +222,9 @@ export function Header(props: HeaderProps) {
     { key: 'zoomReset', label: 'Actual size', hint: 'Ctrl+0', disabled: appearance.zoomLevel === DEFAULT_ZOOM, onSelect: () => appearance.changeZoom(DEFAULT_ZOOM - appearance.zoomLevel) },
     ...(focusMode
       ? []
-      : [{ key: 'focus', label: 'Focus mode', hint: 'Ctrl+Shift+F', icon: <Maximize2 size={15} strokeWidth={1.7} />, separated: true, onSelect: props.onToggleFocus }])
+      : [{ key: 'focus', label: 'Focus mode', hint: 'Ctrl+Shift+F', icon: <Maximize2 size={15} strokeWidth={1.7} />, separated: true, onSelect: props.onToggleFocus }]),
+    ...ephyItems.map((item, index) => (index === 0 ? { ...item, separated: true } : item)),
+    { key: 'settings', label: 'Settings…', icon: <Settings size={15} strokeWidth={1.7} />, separated: true, onSelect: () => settings.setOpen(true) }
   ]
 
   return (
@@ -247,7 +292,7 @@ export function Header(props: HeaderProps) {
         {flags.usesOverflow && (
           <HeaderMenu
             label="More"
-            title="More: appearance, zoom and focus"
+            title="More: appearance, zoom, focus and settings"
             trigger={<Ellipsis size={18} strokeWidth={1.7} />}
             items={overflowItems}
           />
@@ -275,6 +320,15 @@ export function Header(props: HeaderProps) {
                 <Bot size={18} strokeWidth={1.7} />
               </button>
             )}
+            {ephyEnabled && !flags.usesOverflow && (
+              <HeaderMenu
+                className="ephy-menu"
+                label="Ephy"
+                title="Ephy: open, save and publish"
+                trigger={<Cloud size={18} strokeWidth={1.7} />}
+                items={ephyItems}
+              />
+            )}
             {!flags.usesOverflow && (
               <button className="icon-button" aria-label="Focus mode" title="Focus mode (Ctrl+Shift+F)" onClick={props.onToggleFocus}>
                 <Maximize2 size={18} strokeWidth={1.7} />
@@ -282,6 +336,8 @@ export function Header(props: HeaderProps) {
             )}
           </>
         )}
+        {/* Last in the row, beside the window controls: the app, not the document. */}
+        <SettingsPopover {...settings} hideButton={tucked} />
       </div>
     </header>
   )

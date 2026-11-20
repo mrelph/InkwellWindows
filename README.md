@@ -87,7 +87,17 @@ identify the publisher.
 | `F11` | Full screen |
 | `Ctrl+Alt+A` | Show / hide the agent panel |
 | `Ctrl+Shift+E` | Open from Ephy (when Ephy is enabled) |
-| `Escape` | Leave focus writing, otherwise close the outline |
+| `Alt` (tap) / `F10` | Open the full menu: File, Edit, View, Integrations, Help |
+| `Escape` | Close Settings or Appearance, leave focus writing, otherwise close the outline |
+
+There is no menu strip. The header is the window's title bar: drag it to move
+the window, double-click it to maximize, right-click it for the system menu.
+Its controls cover the everyday actions, and the gear at its right end opens
+**Settings**: turn the agent and Ephy on or off (Inkwell asks you to confirm
+before turning either on), spelling, updates, About, and **All menu
+commands…**, which opens the same full menu as `Alt`. While they are on, the
+agent panel and Ephy each get their own header button. In a narrow window
+these fold into the header's **⋯** menu.
 
 You can also pass a file directly:
 
@@ -106,8 +116,10 @@ window and adds that file to the library.
   characters Windows does not permit in filenames.
 - New notes default to the current user's Documents folder.
 - Delete actions use the Windows Recycle Bin and can be restored there.
-- The app uses a native Windows frame, including move, resize, maximize, snap,
-  and system-menu behavior.
+- The window keeps native Windows behavior — move, resize, maximize, snap
+  layouts and the system menu — with the native minimize, maximize and close
+  buttons in the top-right corner, colored to match the theme. Inkwell draws
+  the rest of the title bar itself (it is the document header).
 - The palette tracks the Windows app light/dark preference while retaining
   Inkwell's typography, spacing, and editorial color character.
 
@@ -118,10 +130,11 @@ Once a day, Inkwell optionally checks the GitHub Releases of
 names, contents, or filesystem paths and fails silently when offline. When an
 update is available the status bar offers it; the installer is downloaded,
 checked against its published SHA-256, and run when you choose Restart to
-update. Help ▸ Check for Updates… always answers in a message box, and Help ▸
-Check Automatically turns the daily check off.
+update. Settings ▸ Check for Updates… (also Help ▸ Check for Updates… in the
+full menu) always answers in a message box, and Settings ▸ Check automatically
+turns the daily check off.
 
-To disable it for future terminals and launches regardless of the menu setting:
+To disable it for future terminals and launches regardless of that setting:
 
 ```powershell
 setx INKWELL_NO_UPDATE_CHECK 1

@@ -105,9 +105,18 @@ checked by `trustedDocuments.ts`, LEXICALLY, before any fs call:
   it over `library:adopt-folder`, whose reply grants nothing) or library.json as main loaded it at startup. Drive
   roots, the home folder and folders holding it are refused. `state:save` can
   drop a folder, never add one; `document:read-folder` reads only these.
-- **Integrations**: the agent and Ephy enable toggles are main-only (the
-  Integrations menu). There is no renderer setter, so a compromised page
-  cannot start a command-running agent or publish as the user.
+- **Integrations**: only the person can turn the agent or Ephy ON, and only
+  in main. There is no renderer setter and there must never be one. The page
+  may *request* it (`agent:request-enable` / `ephy:request-enable`, from the
+  Settings popover); `ipc/settingsRequests.ts` then shows a native,
+  window-modal `dialog.showMessageBox` (Turn On / Cancel, Cancel the default)
+  that the page cannot see or answer, and enables only on that click. One
+  confirmation at a time across both integrations, plus a short quiet period
+  after a Cancel, so a compromised page cannot stack or machine-gun dialogs;
+  the channels read no arguments. Turning one OFF is a direct request
+  (`agent:disable` / `ephy:disable`): it only removes capability. The
+  Integrations menu's own checkboxes act in main as before. So a compromised
+  page still cannot start a command-running agent or publish as the user.
 
 Keep new document handlers on these checks; never `trustDocument` a path just
 because the renderer sent it.
@@ -178,20 +187,31 @@ the newest window on later calls:
   mangle and it must never be able to break startup.
 - `settings.ts` — `settings.json`: the agent and Ephy enable toggles, the
   chosen harness, "Include current note", the auto update check, spellcheck.
-  Same sanitize-on-load posture. The agent and Ephy enables change only from
-  the Integrations menu (main); spellcheck, auto-update and "Include current
-  note" may also be set by the renderer (low risk). `onSettingChange` fires on
-  every real change, whoever made it; `main.ts` turns that into `agent:enabled-changed`,
+  Same sanitize-on-load posture. The agent and Ephy enables are turned on
+  only by main after the person confirms (the Integrations menu, or a
+  Settings request — see Critical invariants); spellcheck, auto-update and
+  "Include current note" may also be set by the renderer (low risk).
+  `onSettingChange` fires on every real change, whoever made it; `main.ts`
+  turns that into `agent:enabled-changed`, `agent:include-note-changed`,
   `ephy:enabled-changed`, `spellcheck:changed` and `update:auto-check-changed`
   for the renderer, and `menu.ts` rebuilds. Never mirror one of these toggles
   in the renderer by polling or on focus.
-- `menu.ts` — the application menu (File / Edit / View / Integrations / Help),
-  always visible, like the Mac menu bar. Built from the `MenuState` the renderer pushes on
-  `menu:state` (including the Reading Font list from `src/fonts/readerFonts.ts`
-  with "(not installed)" marks) and from settings. Clicks go back as
-  `menu:command`. Accelerators are display-only (`registerAccelerator: false`):
-  the renderer's shortcut table is the one dispatcher. Also the taskbar jump
-  list: Recent (`app.addRecentDocument`) and the "New note" task.
+- `menu.ts` — the application menu (File / Edit / View / Integrations / Help).
+  It is registered but never drawn as a strip: on Windows the window has
+  Inkwell's own title bar and Electron cannot show a menu bar there at all
+  (`isMenuBarVisible()` stays false), so the menu is *popped up* — Settings ▸
+  All menu commands…, a tap of Alt, or F10, all through `menu:popup`. Built
+  from the `MenuState` the renderer pushes on `menu:state` (including the
+  Reading Font list from `src/fonts/readerFonts.ts` with "(not installed)"
+  marks) and from settings. Clicks go back as `menu:command`. Accelerators
+  are display-only (`registerAccelerator: false`): the renderer's shortcut
+  table is the one dispatcher. Also the taskbar jump list: Recent
+  (`app.addRecentDocument`) and the "New note" task.
+- `ipc/settingsRequests.ts` — what the header's Settings popover may ask of
+  main: the enable *requests* and their native confirmation, the direct
+  disables, `menu:popup` and `app:about`. Everything it needs is injected by
+  `main.ts`, so `settingsRequests.test.ts` runs the real handlers with
+  `electron` stubbed.
 - `assets.ts` + `assetGuard.ts` + `trustedDocuments.ts` — the `inkwell-asset`
   scheme for note images (see Critical invariants). The library folders it
   uses are main's in-memory record, never a cached read of library.json.
@@ -386,13 +406,39 @@ given coordinates, so it silently grabs unrelated windows when the stack shifts.
 
 ## Platform window behavior
 
-Windows uses the native frame. Do not replace it with hand-built minimize,
-maximize, or close controls: the native frame supplies Windows move, resize,
-snap, system-menu, accessibility, and high-DPI behavior. Linux retains the
-upstream frameless window because Hyprland owns that chrome.
+On Windows the header is the title bar. The window is `titleBarStyle:
+'hidden'` with a `titleBarOverlay` (`main.ts`): no native title strip and no
+menu strip, but the native minimize / maximize / close buttons stay, as a
+32px Window Controls Overlay in the top-right corner. Do not replace them
+with hand-built controls: they, and the drag region, are what keep Windows
+move, resize, snap layouts, the system menu, accessibility and high-DPI
+behavior native. `main.ts` repaints the overlay (`setTitleBarOverlay`) with
+the theme's `--surface-chrome` and `--text-primary` whenever the theme
+changes, and with `--surface-reader` while `MenuState.focusMode` is set,
+because that is the header's surface then. Linux retains the upstream
+frameless window because Hyprland owns that chrome.
 
-One `.document-header` carries document identity and actions inside the app.
-It is not a replacement titlebar and should not gain `-webkit-app-region` rules.
+One `.document-header` carries document identity and actions, and on Windows
+it is also the window's drag region. All of that is one block in `styles.css`
+keyed on `:root[data-titlebar='overlay']` (App sets the token on win32 only),
+so Linux gets no `-webkit-app-region` rule:
+
+- The header is stretched over the outline and agent columns
+  (`margin-right: calc(-1 * (var(--col-outline) + var(--col-agent)))`) and
+  those two panels sit in a second grid row below it, so the header always
+  reaches the corner the caption buttons occupy. This rides on the same
+  `--col-*` variables as the collapse rules; it declares no
+  `grid-template-columns`. An overlaying outline / agent panel spans both rows
+  (`grid-row: 1 / -1`) and keeps `top: var(--header-h)`.
+- The header's right padding grows by `--wco-reserve`, computed from
+  `env(titlebar-area-x)` / `env(titlebar-area-width)`. Those are CSS px, so
+  page zoom is already accounted for, and they fall back to 0 with no overlay
+  (full screen). Because it is padding, `useHeaderStage` measures it.
+- The header is `-webkit-app-region: drag`; every `button`, field, menu and
+  dialog inside it is `no-drag`. A new interactive element in the header that
+  is none of those needs `no-drag` too, or it will not receive clicks.
+- CDP screenshots do not include the caption buttons. To see them, capture
+  the window from main (`desktopCapturer.getSources({ types: ['window'] })`).
 
 `minWidth`/`minHeight` are deliberately low (480×360). Hyprland tiles a window to
 whatever the layout dictates regardless of these hints, so every breakpoint —

@@ -194,7 +194,8 @@ export function isAgentEnabled(): boolean {
 }
 
 /** Turning the agent off stops any running session. Main-only: called from
-    the Integrations menu, never from the renderer. */
+    the Integrations menu, or by ipc/settingsRequests.ts after its native
+    confirmation. Never from the renderer: it can only request, or disable. */
 export function setAgentEnabled(on: boolean): boolean {
   const next = setSetting('agentEnabled', on === true)
   if (!next) void controller.stop()

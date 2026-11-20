@@ -469,7 +469,15 @@ export type InkwellBridge = {
     setState: (state: MenuState) => void
     /** `menu:command` — main → renderer, from a menu click or jump list. */
     onCommand: (listener: (command: MenuCommand) => void) => Unsubscribe
+    /** `menu:popup`: asks main to pop the whole application menu up at this
+        point of the page (CSS px), or at the top-left when none is given. On
+        Windows the menu bar is not drawn, so this is how every File / Edit /
+        View / Integrations / Help item stays reachable. */
+    popup: (at?: { x: number; y: number }) => void
   }
+
+  /** `app:about`: main shows its About box. */
+  showAbout: () => void
 
   fullScreen: {
     toggle: () => void
@@ -496,16 +504,27 @@ export type InkwellBridge = {
     onChange: (listener: (on: boolean) => void) => Unsubscribe
   }
 
-  /* The agent and Ephy enable toggles are main-only (Integrations menu): a
-     compromised page must not be able to turn on a command-running agent or
-     publish as the user. The renderer reads them and hears every change. */
+  /* Turning the agent or Ephy ON is main's decision: a compromised page must
+     not be able to start a command-running agent or publish as the user. The
+     renderer can only ASK (`requestEnable`); main then shows a native,
+     window-modal confirmation and enables only on a click there. There is no
+     setter. Turning one off is direct (`disable`): it only removes capability.
+     The renderer reads the toggles and hears every change. */
   agent: {
     getEnabled: () => Promise<boolean>
-    /** `agent:enabled-changed`: toggled from the Integrations menu. */
+    /** `agent:enabled-changed`: toggled from Settings or the Integrations menu. */
     onEnabledChange: (listener: (on: boolean) => void) => Unsubscribe
+    /** `agent:request-enable`: main asks the person in a native dialog.
+        Resolves whether the agent is on afterwards; a request made while a
+        confirmation is already open (or just after a Cancel) is refused. */
+    requestEnable: () => Promise<boolean>
+    /** `agent:disable`: turns the agent off and stops its session. */
+    disable: () => Promise<boolean>
     /** The persisted "Include current note" (settings `agentIncludeNote`). */
     getIncludeNote: () => Promise<boolean>
     setIncludeNote: (on: boolean) => Promise<boolean>
+    /** `agent:include-note-changed`: set from the panel, Settings or a prompt. */
+    onIncludeNoteChange: (listener: (on: boolean) => void) => Unsubscribe
     listHarnesses: () => Promise<AgentHarnessInfo[]>
     /** Opens the harness's install page; main owns the URL. */
     openHarnessHelp: (harness: AgentHarnessId) => void
@@ -537,8 +556,12 @@ export type InkwellBridge = {
 
   ephy: {
     getEnabled: () => Promise<boolean>
-    /** `ephy:enabled-changed`: toggled from the Integrations menu. */
+    /** `ephy:enabled-changed`: toggled from Settings or the Integrations menu. */
     onEnabledChange: (listener: (on: boolean) => void) => Unsubscribe
+    /** `ephy:request-enable`: as `agent.requestEnable`, for Ephy. */
+    requestEnable: () => Promise<boolean>
+    /** `ephy:disable`: turns Ephy off. */
+    disable: () => Promise<boolean>
     status: () => Promise<EphyStatus>
     list: (request: { cursor?: string; limit?: number }) => Promise<EphyResult<EphyListPage>>
     open: (id: string) => Promise<EphyResult<EphyDocument>>
@@ -582,6 +605,13 @@ export const CHANNELS = {
   // menu (menu.ts)
   menuState: 'menu:state',
   menuCommand: 'menu:command',
+  // header settings surface (ipc/settingsRequests.ts)
+  menuPopup: 'menu:popup',
+  appAbout: 'app:about',
+  agentRequestEnable: 'agent:request-enable',
+  agentDisable: 'agent:disable',
+  ephyRequestEnable: 'ephy:request-enable',
+  ephyDisable: 'ephy:disable',
   // updates (ipc/update.ts)
   updateGet: 'update:get',
   updateDismiss: 'update:dismiss',
@@ -602,6 +632,7 @@ export const CHANNELS = {
   agentEnabledChanged: 'agent:enabled-changed',
   agentGetIncludeNote: 'agent:get-include-note',
   agentSetIncludeNote: 'agent:set-include-note',
+  agentIncludeNoteChanged: 'agent:include-note-changed',
   agentListHarnesses: 'agent:list-harnesses',
   agentOpenHarnessHelp: 'agent:open-harness-help',
   agentGetState: 'agent:get-state',

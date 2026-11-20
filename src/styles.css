@@ -124,8 +124,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--text-muted); }
 
-/* The platform owns the window frame (the native frame on Windows, the
-   compositor on Linux), so Inkwell ships no titlebar of its own. One row.
+/* The platform owns the window frame (the compositor on Linux; on Windows the
+   native frame minus its title strip, see "the header is the title bar"
+   below), so Inkwell ships no separate titlebar row. One row.
 
    grid-template-columns is declared exactly ONCE, here. Four tracks: library,
    workspace, outline, agent panel. Panel widths are custom
@@ -469,8 +470,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: var(--surface-canvas);
 }
 
-/* One header, not two. Window identity belongs to the native frame; this strip
-   carries document identity and the actions that operate on it.
+/* One header, not two. This strip carries document identity and the actions
+   that operate on it — and, on Windows, it is the window's title bar as well
+   (the `data-titlebar` block further down).
 
    The row never clips and never wraps. Header.tsx measures it and steps down
    through eight stages (`data-stage`: full, iconViews, noShortcutHint,
@@ -484,7 +486,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   align-items: center;
   min-width: 0;
   height: var(--header-h);
-  padding: 0 16px;
+  /* The side padding is a variable so the title-bar rule can add the
+     caption-button reserve to whatever the stage or focus mode chose. */
+  --header-pad-x: 16px;
+  padding: 0 var(--header-pad-x);
   background: var(--surface-chrome);
   border-bottom: 1px solid var(--line-hairline);
 }
@@ -495,7 +500,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .document-header:is([data-stage='compact'], [data-stage='iconSave']),
 .document-header:is([data-stage='compact'], [data-stage='iconSave']) :is(.document-identity, .document-tools) { gap: 6px; }
-.document-header:is([data-stage='compact'], [data-stage='iconSave']) { padding: 0 10px; }
+.document-header:is([data-stage='compact'], [data-stage='iconSave']) { --header-pad-x: 10px; }
 
 /* Coral marks document identity: this badge, the active row's file icon and
    the unsaved dot. Nothing else is coral. */
@@ -741,6 +746,130 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .appearance-reset:hover:not(:disabled) { color: var(--text-primary); background: var(--accent-tint); }
 .appearance-reset:disabled { cursor: default; color: var(--text-muted); opacity: .5; }
+
+/* Settings: the gear at the end of the header and its panel, the sibling of
+   Appearance. Same surface, same place; sections instead of fields. */
+.settings-control { position: relative; flex: none; }
+.settings-control.settings-buttonless { display: contents; }
+
+.settings-panel {
+  position: fixed;
+  z-index: 8;
+  top: calc(var(--header-h) + 8px);
+  right: 8px;
+  width: min(312px, calc(100vw - 16px));
+  max-height: calc(100vh - var(--header-h) - 16px);
+  padding: 16px;
+  overflow-y: auto;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--text-primary) 18%, transparent);
+}
+
+.settings-panel section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-hairline); }
+.settings-panel section:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.settings-panel h2 {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* A whole row is the switch: label and hint on the left, the track on the right. */
+.settings-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 7px 8px;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+.settings-switch:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.settings-switch:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.settings-row-icon { display: grid; flex: none; color: var(--text-muted); }
+.settings-switch[aria-checked='true'] .settings-row-icon { color: var(--accent); }
+.settings-row-text { display: grid; flex: 1; min-width: 0; gap: 2px; }
+.settings-row-text strong { font-size: 12px; font-weight: 650; }
+.settings-row-text small { color: var(--text-muted); font-size: 10.5px; font-weight: 550; line-height: 1.4; }
+
+.settings-switch-track {
+  flex: none;
+  width: 30px;
+  height: 18px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--text-primary) 24%, transparent);
+  border-radius: 99px;
+  transition: background-color 140ms ease, opacity 140ms ease;
+}
+.settings-switch-track span {
+  display: block;
+  width: 14px;
+  height: 14px;
+  background: var(--surface-raised);
+  border-radius: 50%;
+  transition: transform 140ms ease;
+}
+.settings-switch[aria-checked='true'] .settings-switch-track { background: var(--accent); }
+.settings-switch[aria-checked='true'] .settings-switch-track span { background: var(--accent-contrast); transform: translateX(12px); }
+.settings-switch[aria-busy='true'] .settings-switch-track { opacity: .55; }
+
+.settings-nested { display: grid; gap: 2px; margin: 0 0 4px 26px; }
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.settings-check input { margin: 0; accent-color: var(--accent); }
+
+.settings-action {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 8px;
+  cursor: pointer;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.settings-action:hover { color: var(--text-primary); background: var(--accent-tint); }
+
+.settings-links { display: grid; gap: 1px; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line-hairline); }
+.settings-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 620;
+}
+.settings-link svg { flex: none; color: var(--text-muted); }
+.settings-link:hover, .settings-link:focus-visible { color: var(--text-primary); background: var(--accent-tint); outline: 0; }
+.settings-link:hover svg { color: var(--accent); }
+.settings-nested .settings-link { width: calc(100% + 12px); margin: 0 -6px; padding: 5px 6px; }
 
 .view-switcher {
   display: flex;
@@ -1254,6 +1383,49 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .agent-collapsed .agent-panel { display: none; }
 
 /* ---------------------------------------------------------------------------
+   Windows: the header is the title bar (`data-titlebar='overlay'` on the root,
+   set by App on win32 only; Linux never matches any of this).
+
+   The window has no native title strip and no menu strip. The native
+   minimize / maximize / close buttons are a Window Controls Overlay in the
+   top-right corner, 32px tall, painted in the header's own surface by main.
+   Three things follow:
+
+   1. The header must reach that corner whatever is docked on the right, so it
+      becomes the top row of everything right of the library: the grid gains a
+      header-height row, the outline and agent panel start below it, and the
+      header stretches over their columns by exactly their widths. Those
+      widths are the same `--col-*` variables the collapse rules drive, so a
+      collapsed, overlaying or focus-hidden panel contributes 0 and nothing
+      here needs to know which. No grid-template-columns is declared.
+   2. The header keeps clear of the caption buttons: its right padding grows
+      by the overlay's width, read from the `titlebar-area-*` environment
+      variables (CSS px, so page zoom is already in it; 0 when there is no
+      overlay, as in full screen). It is padding, so Header.tsx's stage
+      measurement counts it like any other.
+   3. The header's background drags the window (and takes double-click to
+      maximize, the snap gestures and the right-click system menu); every
+      control in it, and every popover it opens, does not.
+   --------------------------------------------------------------------------- */
+:root[data-titlebar='overlay'] {
+  --wco-reserve: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+:where(:root[data-titlebar='overlay']) .app-shell { grid-template-rows: var(--header-h) minmax(0, 1fr); }
+:where(:root[data-titlebar='overlay']) :is(.sidebar, .workspace) { grid-row: 1 / -1; }
+:where(:root[data-titlebar='overlay']) :is(.outline, .agent-panel) { grid-row: 2; }
+
+:root[data-titlebar='overlay'] .app-shell .document-header {
+  margin-right: calc(-1 * (var(--col-outline) + var(--col-agent)));
+  padding-right: calc(var(--header-pad-x) + var(--wco-reserve));
+  -webkit-app-region: drag;
+}
+
+:root[data-titlebar='overlay'] .document-header :is(button, a, input, select, textarea, .view-switcher, [role='menu'], [role='dialog']) {
+  -webkit-app-region: no-drag;
+}
+
+/* ---------------------------------------------------------------------------
    Breakpoints (Mac AppModel.layoutWidth / widthChanged / effectiveView).
 
    These are NOT media queries. A breakpoint has to compare against the layout
@@ -1277,6 +1449,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    Each step must stay fully operable, never leave a visible-but-inert control.
    --------------------------------------------------------------------------- */
 
+/* (An overlaying panel is placed against the whole grid, both rows: see the
+   title-bar block above for why there can be two.) */
 /* The outline loses its column and becomes an overlay instead. */
 :where(:root[data-chrome~='outline-overlay']) .app-shell { --col-outline: 0px; }
 /* Overlays the canvas, never the header — the header holds Save. An absolutely
@@ -1286,6 +1460,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   position: absolute;
   z-index: 4;
   grid-column: 1 / -1;
+  grid-row: 1 / -1;
   top: var(--header-h);
   /* Left of a docked agent panel; 0 when it is collapsed or overlaying. */
   right: var(--col-agent);
@@ -1310,6 +1485,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   position: absolute;
   z-index: 5;
   grid-column: 1 / -1;
+  grid-row: 1 / -1;
   top: var(--header-h);
   right: 0;
   bottom: 0;
@@ -1366,7 +1542,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell.focus-mode .agent-panel,
 .app-shell.focus-mode .statusbar { display: none; }
 .app-shell.focus-mode .document-header {
-  padding: 0 12px;
+  --header-pad-x: 12px;
   background: var(--surface-reader);
   border-bottom-color: transparent;
 }

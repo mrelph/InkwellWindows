@@ -43,12 +43,18 @@ describe('IPC contract integrity', () => {
     expect(runtimeImports.map((m) => m[1])).toEqual([])
   })
 
-  it('the renderer cannot enable the agent or Ephy (main-only toggles)', () => {
+  it('the renderer cannot enable the agent or Ephy: it may only request it', () => {
     for (const channel of ['agent:set-enabled', 'ephy:set-enabled']) {
       expect(values).not.toContain(channel)
       expect(preload).not.toContain(channel)
     }
     expect(preload).not.toMatch(/setEnabled/)
+    /* Asking is allowed (main confirms natively, ipc/settingsRequests.ts), and
+       so is turning one off; neither carries a payload the page chooses. */
+    for (const channel of ['agent:request-enable', 'agent:disable', 'ephy:request-enable', 'ephy:disable']) {
+      expect(values).toContain(channel)
+      expect(preload).toContain(`ipcRenderer.invoke('${channel}')`)
+    }
     // The read side and the change events stay.
     for (const channel of ['agent:get-enabled', 'agent:enabled-changed', 'ephy:get-enabled', 'ephy:enabled-changed']) {
       expect(values).toContain(channel)

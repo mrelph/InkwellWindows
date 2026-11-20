@@ -36,7 +36,8 @@ export function isEphyEnabled(): boolean {
   return getSetting('ephyEnabled')
 }
 
-/** Main-only: called from the Integrations menu, never from the renderer (a
+/** Main-only: called from the Integrations menu, or by ipc/settingsRequests.ts
+    after its native confirmation; never from the renderer directly (a
     compromised page must not be able to publish as the user). */
 export function setEphyEnabled(on: boolean): boolean {
   return setSetting('ephyEnabled', on === true)

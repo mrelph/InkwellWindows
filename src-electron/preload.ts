@@ -57,8 +57,11 @@ const bridge = {
 
   menu: {
     setState: (state: MenuState) => ipcRenderer.send('menu:state', state),
-    onCommand: (listener) => subscribe('menu:command', listener)
+    onCommand: (listener) => subscribe('menu:command', listener),
+    popup: (at?: { x: number; y: number }) => ipcRenderer.send('menu:popup', at)
   },
+
+  showAbout: () => ipcRenderer.send('app:about'),
 
   fullScreen: {
     toggle: () => ipcRenderer.send('window:toggle-fullscreen'),
@@ -84,8 +87,11 @@ const bridge = {
   agent: {
     getEnabled: () => ipcRenderer.invoke('agent:get-enabled'),
     onEnabledChange: (listener) => subscribe('agent:enabled-changed', listener),
+    requestEnable: () => ipcRenderer.invoke('agent:request-enable'),
+    disable: () => ipcRenderer.invoke('agent:disable'),
     getIncludeNote: () => ipcRenderer.invoke('agent:get-include-note'),
     setIncludeNote: (on: boolean) => ipcRenderer.invoke('agent:set-include-note', on),
+    onIncludeNoteChange: (listener) => subscribe('agent:include-note-changed', listener),
     listHarnesses: () => ipcRenderer.invoke('agent:list-harnesses'),
     openHarnessHelp: (harness: AgentHarnessId) => ipcRenderer.send('agent:open-harness-help', harness),
     getState: () => ipcRenderer.invoke('agent:get-state'),
@@ -112,6 +118,8 @@ const bridge = {
   ephy: {
     getEnabled: () => ipcRenderer.invoke('ephy:get-enabled'),
     onEnabledChange: (listener) => subscribe('ephy:enabled-changed', listener),
+    requestEnable: () => ipcRenderer.invoke('ephy:request-enable'),
+    disable: () => ipcRenderer.invoke('ephy:disable'),
     status: () => ipcRenderer.invoke('ephy:status'),
     list: (request: { cursor?: string; limit?: number }) => ipcRenderer.invoke('ephy:list', request),
     open: (id: string) => ipcRenderer.invoke('ephy:open', id),

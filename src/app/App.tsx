@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, ClipboardCopy, Copy, FolderOpen, PencilLine, Trash2, X } from 'lucide-react'
 import { AgentPanel } from '../agent/AgentPanel'
 import type { AppearanceProps } from '../components/AppearancePopover'
@@ -6,6 +6,7 @@ import { isAppTheme, isAppearanceMode } from '../../src-electron/ipc/contract'
 import type { FolderResult } from '../../src-electron/ipc/contract'
 import { EmptyState } from '../components/EmptyState'
 import { Header } from '../components/Header'
+import type { SettingsProps } from '../components/SettingsPopover'
 import { Outline } from '../components/Outline'
 import { RowMenu, type MenuItem } from '../components/RowMenu'
 import { Sidebar } from '../components/Sidebar'
@@ -53,7 +54,15 @@ import { initialOutlineOpen, useResponsiveChrome } from './useResponsiveChrome'
 const READER_FONT_VALUES = new Set<string>(READER_FONTS.map((font) => font.value))
 const ACCELERATORS = acceleratorMap()
 
-export function App() {
+export /* The whole application menu, popped up under the header: at the Settings
+   button when the header shows one, else at the header's left edge. */
+function popUpMenu(): void {
+  const anchor = document.querySelector('.settings-button') ?? document.querySelector('.document-header')
+  const rect = anchor?.getBoundingClientRect()
+  window.inkwell?.menu?.popup(rect ? { x: rect.left, y: rect.bottom + 4 } : undefined)
+}
+
+function App() {
   const [documents, setDocuments] = useState<MarkdownDoc[]>([])
   const [folders, setFolders] = useState<FolderSource[]>([])
   const [recent, setRecent] = useState<RecentEntry[]>([])
@@ -76,6 +85,7 @@ export function App() {
   const [appTheme, setAppTheme] = useState<AppTheme>('inkwell')
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [ephyLinks, setEphyLinks] = useState<Record<string, EphyLink>>({})
   const [notice, setNotice] = useState('Reading your library')
   const [menu, setMenu] = useState<{ row: LibraryRow; x: number; y: number } | null>(null)
@@ -237,6 +247,15 @@ export function App() {
     }
     void window.inkwell?.getTheme?.().then(apply).catch(() => undefined)
     return window.inkwell?.onThemeChange?.(apply)
+  }, [])
+
+  /* On Windows the header is the title bar: styles.css keys its drag region,
+     its full-width row and the caption-button reserve on this token. Linux
+     keeps a plain header (Hyprland owns that chrome). */
+  useLayoutEffect(() => {
+    if (window.inkwell?.platform !== 'win32') return
+    document.documentElement.dataset.titlebar = 'overlay'
+    return () => { delete document.documentElement.dataset.titlebar }
   }, [])
 
   /* The enable toggles can flip from the menu, a context menu or a panel; main
@@ -744,7 +763,8 @@ export function App() {
   /* Dismiss transient appearance chrome before changing the surrounding
      workspace. Focus mode comes next because it encloses the outline. */
   const escape = () => {
-    if (appearanceOpen) setAppearanceOpen(false)
+    if (settingsOpen) setSettingsOpen(false)
+    else if (appearanceOpen) setAppearanceOpen(false)
     else if (focusMode) toggleFocus()
     else setOutlineOpen(false)
   }
@@ -793,6 +813,41 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  /* Windows draws no menu strip (the header is the title bar, and Electron
+     cannot show a menu bar in such a window), so the keys that used to reach
+     it pop the whole application menu up instead: a tap of Alt on its own, or
+     F10. Alt held for a shortcut, AltGr and Alt+Tab are not taps. */
+  useEffect(() => {
+    if (window.inkwell?.platform !== 'win32') return
+    let armed = false
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'F10' && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+        event.preventDefault()
+        popUpMenu()
+        return
+      }
+      armed = event.key === 'Alt' && !event.repeat && !event.ctrlKey && !event.shiftKey && !event.metaKey && !event.getModifierState('AltGraph')
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      const tapped = armed && event.key === 'Alt'
+      armed = false
+      if (!tapped) return
+      event.preventDefault()
+      popUpMenu()
+    }
+    const disarm = () => { armed = false }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('pointerdown', disarm)
+    window.addEventListener('blur', disarm)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('pointerdown', disarm)
+      window.removeEventListener('blur', disarm)
+    }
   }, [])
 
   /* Menu clicks and jump-list entries arrive from main as commands. */
@@ -948,6 +1003,17 @@ export function App() {
     reset: resetAppearance
   }
 
+  const settings: SettingsProps = {
+    open: settingsOpen,
+    setOpen: setSettingsOpen,
+    agentEnabled,
+    ephyEnabled,
+    needsNotesFolder: folders.length === 0,
+    onOpenAppearance: () => setAppearanceOpen(true),
+    onCheckForUpdates: () => { runCommand('checkForUpdates') },
+    onAllCommands: (at) => window.inkwell?.menu?.popup(at)
+  }
+
   const shellClass = [
     'app-shell',
     sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed',
@@ -1001,9 +1067,12 @@ export function App() {
               outlineOpen={outlineOpen}
               agentEnabled={agentEnabled}
               agentOpen={agentOpen}
+              ephyEnabled={ephyEnabled}
               isEphyNote={activeDocument?.sourceId === EPHY}
               chrome={chrome}
               appearance={appearance}
+              settings={settings}
+              onEphy={(command) => { runCommand(command) }}
               onToggleSidebar={() => setSidebarOpen((open) => !open)}
               onToggleFocus={toggleFocus}
               onToggleOutline={() => setOutlineOpen((open) => !open)}

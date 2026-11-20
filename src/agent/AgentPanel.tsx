@@ -166,6 +166,8 @@ export function AgentPanel({ open, onClose }: AgentPanelProps) {
   /* The persisted "Include current note". */
   useEffect(() => {
     void agent?.getIncludeNote?.().then(setIncludeNote).catch(() => undefined)
+    // Settings carries the same toggle; main pushes every change.
+    return agent?.onIncludeNoteChange?.(setIncludeNote)
   }, [agent])
 
   const refreshHarnesses = useCallback(() => {
@@ -383,7 +385,7 @@ export function AgentPanel({ open, onClose }: AgentPanelProps) {
       <div className="agent-panel-body">
         {header}
         <p className="agent-panel-empty">
-          The agent is turned off. Turn it on from the Integrations menu to chat with Kiro CLI, Codex or Claude Code
+          The agent is turned off. Turn it on in Settings (the gear in the header) to chat with Kiro CLI, Codex or Claude Code
           about your notes. Nothing is started until you do.
         </p>
         {sheets}
