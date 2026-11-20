@@ -18,7 +18,7 @@ export const COMMAND_IDS = [
   'rename', 'duplicate', 'reveal', 'copyPath', 'trash',
   'find', 'replace', 'findNext', 'findPrevious', 'useSelectionForFind', 'findInDocuments',
   'viewRead', 'viewSplit', 'viewWrite', 'toggleLibrary', 'toggleOutline', 'focus',
-  'zoomIn', 'zoomOut', 'zoomReset', 'setReaderFont', 'toggleFullScreen', 'escape',
+  'zoomIn', 'zoomOut', 'zoomReset', 'setReaderFont', 'setAppearance', 'setTheme', 'toggleFullScreen', 'escape',
   'toggleAgentPanel', 'ephyOpen', 'ephySave', 'ephySaveAsNew', 'ephyOpenInBrowser', 'ephyGetLatest',
   'checkForUpdates'
 ] as const satisfies readonly CommandId[]

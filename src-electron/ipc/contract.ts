@@ -45,6 +45,27 @@ export type ReaderFont = typeof READER_FONT_VALUES[number]
 export const isReaderFont = (value: unknown): value is ReaderFont =>
   typeof value === 'string' && (READER_FONT_VALUES as readonly string[]).includes(value)
 
+/** Light or dark for the app itself, as stored in library.json (Mac
+    `AppearanceMode`). Case order is menu order. */
+export const APPEARANCE_VALUES = ['system', 'light', 'dark'] as const
+export type AppearanceMode = typeof APPEARANCE_VALUES[number]
+export const APPEARANCE_LABELS: Record<AppearanceMode, string> = { system: 'System', light: 'Light', dark: 'Dark' }
+export const isAppearanceMode = (value: unknown): value is AppearanceMode =>
+  typeof value === 'string' && (APPEARANCE_VALUES as readonly string[]).includes(value)
+
+/** The app's color theme (Mac `AppTheme`). The palettes live in
+    src-electron/theme.ts; this is only the names, for storage and menus. */
+export const APP_THEME_VALUES = ['inkwell', 'paper', 'slate', 'forest', 'midnight'] as const
+export type AppTheme = typeof APP_THEME_VALUES[number]
+export const APP_THEME_LABELS: Record<AppTheme, string> = {
+  inkwell: 'Inkwell', paper: 'Paper', slate: 'Slate', forest: 'Forest', midnight: 'Midnight'
+}
+export const isAppTheme = (value: unknown): value is AppTheme =>
+  typeof value === 'string' && (APP_THEME_VALUES as readonly string[]).includes(value)
+
+/** `theme:set-appearance` payload: what the renderer tells main. */
+export type AppearanceChoice = { appearance: AppearanceMode; theme: AppTheme }
+
 export type ViewMode = 'read' | 'split' | 'write'
 
 /** A local file linked to an Ephy artifact. Ids, titles and versions only —
@@ -59,6 +80,8 @@ export type InkwellState = {
   readerFont: ReaderFont
   zoomLevel: number
   view: ViewMode
+  appearance: AppearanceMode
+  theme: AppTheme
   /** Keyed by absolute local path. */
   ephyLinks: Record<string, EphyLink>
 }
@@ -130,6 +153,8 @@ export type CommandId =
   | 'zoomOut'
   | 'zoomReset'
   | 'setReaderFont'       // arg: ReaderFont
+  | 'setAppearance'       // arg: AppearanceMode
+  | 'setTheme'            // arg: AppTheme
   | 'toggleFullScreen'
   | 'escape'
   // Integrations
@@ -163,6 +188,8 @@ export type MenuState = {
   outlineOpen: boolean
   agentOpen: boolean
   zoomLevel: number
+  appearance: AppearanceMode
+  theme: AppTheme
   readerFont: ReaderFont
   /** View ▸ Reading Font, in picker order. `label` already says "(not
       installed)" when the renderer found the font missing; `separated` draws
@@ -321,7 +348,22 @@ export type AgentBufferResponse =
     and maps each real path back to the renderer's spelling, so a note opened
     through a junction, a mapped drive or a short name still routes to its
     buffer (Mac `document(atResolvedPath:)`). */
-export type AgentContext = { roots: string[]; activePath?: string; openPaths?: string[] }
+export type AgentContext = {
+  roots: string[]
+  activePath?: string
+  openPaths?: string[]
+  /** The active note is an unsaved draft: with no folder shared the agent can still edit it. */
+  activeDraft?: boolean
+}
+
+/** `library:adopt-folder` (main → renderer): main chose and already trusts
+    this folder (the agent's notes-folder offer) and asks the renderer to add
+    it to the library exactly as File ▸ Add Folder does. The renderer answers
+    on `library:adopt-folder-result` once the folder is in its state and the
+    agent context has been pushed. The reply grants nothing: main already
+    decided, and `state:save` still can only keep folders main knows. */
+export type LibraryAdoptRequest = { requestId: string; result: FolderResult }
+export type LibraryAdoptResponse = { requestId: string; ok: boolean }
 
 export type AgentResult = { ok: true } | { ok: false; message: string }
 
@@ -414,6 +456,9 @@ export type InkwellBridge = {
   /** Resolves the active Omarchy theme, or the host system palette. */
   getTheme: () => Promise<ThemePayload>
   onThemeChange: (listener: (theme: ThemePayload) => void) => Unsubscribe
+  /** Tells main the chosen mode and theme (it validates, forces the native
+      theme, repaints the window and answers on `theme:changed`). */
+  setAppearance: (choice: AppearanceChoice) => void
   /** Native confirm before discarding unsaved work. True means discard. */
   confirmDiscard: (names: string) => Promise<boolean>
   /** Files passed on argv or opened while the app was already running. */
@@ -478,6 +523,16 @@ export type InkwellBridge = {
     respondBuffer: (response: AgentBufferResponse) => void
     /** `agent:file-written`: the agent wrote a file on disk. */
     onFileWritten: (listener: (written: AgentFileWritten) => void) => Unsubscribe
+    /** Integrations ▸ Agent ▸ Add Notes Folder… from the panel: main shows the
+        dialog and adds the folder. False when declined, not applicable (agent
+        off, a folder already shared) or it could not be added. */
+    addNotesFolder: () => Promise<boolean>
+  }
+
+  library: {
+    /** `library:adopt-folder`: main asks the renderer to add a folder it chose. */
+    onAdoptFolder: (listener: (request: LibraryAdoptRequest) => void) => Unsubscribe
+    respondAdoptFolder: (response: LibraryAdoptResponse) => void
   }
 
   ephy: {
@@ -519,6 +574,7 @@ export const CHANNELS = {
   // theme (main.ts)
   themeGet: 'theme:get',
   themeChanged: 'theme:changed',
+  themeSetAppearance: 'theme:set-appearance',
   // window (main.ts)
   fullScreenToggle: 'window:toggle-fullscreen',
   fullScreenGet: 'window:get-fullscreen',
@@ -561,6 +617,10 @@ export const CHANNELS = {
   agentBufferRequest: 'agent:buffer-request',
   agentBufferResponse: 'agent:buffer-response',
   agentFileWritten: 'agent:file-written',
+  agentAddNotesFolder: 'agent:add-notes-folder',
+  // library adoption (ipc/documents.ts)
+  libraryAdoptFolder: 'library:adopt-folder',
+  libraryAdoptFolderResult: 'library:adopt-folder-result',
   // ephy (ephy/index.ts)
   ephyGetEnabled: 'ephy:get-enabled',
   ephyEnabledChanged: 'ephy:enabled-changed',

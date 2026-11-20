@@ -10,6 +10,7 @@
      --exit-early   print to stderr and exit with status 3 before initialize
    Prompt text "wait for cancel" makes it wait for session/cancel.
    Every message it receives is appended to $FAKE_ACP_LOG when set.
+   With FAKE_ACP_CREATE=1 it writes a new file without reading it first.
    The file it edits is $FAKE_ACP_TARGET, else the prompt's resource, else
    <cwd>/note.md. */
 import { appendFileSync } from 'node:fs'
@@ -138,7 +139,10 @@ async function runPrompt(request) {
   }
 
   update(session, { sessionUpdate: 'tool_call_update', toolCallId: 'call_1', status: 'in_progress' })
-  const read = await call('fs/read_text_file', { sessionId: session, path: target })
+  // FAKE_ACP_CREATE=1: a new note, written without reading it first.
+  const read = process.env.FAKE_ACP_CREATE === '1'
+    ? { result: { content: '' } }
+    : await call('fs/read_text_file', { sessionId: session, path: target })
   const old = read.result?.content
   if (old === undefined || old === null) {
     update(session, {

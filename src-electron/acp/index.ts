@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { app, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, dialog, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { handle, on } from '../ipcGuard'
+import { trustAndReadLibraryFolder } from '../ipc/documents'
+import { adoptFolderInRenderer, registerLibraryAdopt } from '../libraryAdopt'
+import { createNotesFolder, defaultNotesFolderPath } from './notesFolder'
 import nodePath from 'node:path'
 import { getSetting, setSetting } from '../settings'
 import type {
@@ -117,12 +120,68 @@ function askBuffer(query: BufferQuery): Promise<BufferAnswer> {
   })
 }
 
+/** Where "Create" makes the notes folder: `Documents\Inkwell`. An isolated run
+    (a custom --user-data-dir, as tests use) gets a fake home inside its data
+    folder, so a test never touches the real Documents. */
+function notesFolderPath(): string {
+  const documents = app.commandLine.hasSwitch('user-data-dir')
+    ? nodePath.join(app.getPath('userData'), 'Home', 'Documents')
+    : app.getPath('documents')
+  return defaultNotesFolderPath(documents)
+}
+
+const tell = (window: BrowserWindow, message: string) =>
+  dialog.showMessageBox(window, { type: 'warning', message, buttons: ['OK'], noLink: true }).then(() => undefined, () => undefined)
+
+/** The native, window-modal "add a notes folder" dialog: Create (default) /
+    Choose Folder… / Not Now. The folder is trusted by main and adopted by the
+    renderer before this resolves true; the renderer never grants the trust. */
+async function askNotesFolder(message: string): Promise<boolean> {
+  const window = current
+  if (!window || window.isDestroyed()) return false
+  const target = notesFolderPath()
+  const { response } = await dialog.showMessageBox(window, {
+    type: 'question',
+    title: 'Notes folder',
+    message,
+    detail: 'Notes the agent creates are saved in a library folder, after you allow each one.',
+    buttons: [`Create ${target}`, 'Choose Folder…', 'Not Now'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true
+  })
+  let folder: string
+  if (response === 0) {
+    const real = createNotesFolder(target)
+    if (!real) {
+      await tell(window, `Could not create ${target}`)
+      return false
+    }
+    folder = real
+  } else if (response === 1) {
+    const selection = await dialog.showOpenDialog(window, { title: 'Open a folder', properties: ['openDirectory'] })
+    if (selection.canceled || !selection.filePaths[0]) return false
+    folder = selection.filePaths[0]
+  } else {
+    return false
+  }
+  const result = await trustAndReadLibraryFolder(folder)
+  if (result.refused) {
+    await tell(window, result.refused)
+    return false
+  }
+  if (!result.folder || !await adoptFolderInRenderer(result)) return false
+  // The renderer pushed its agent context before it answered.
+  return !controller.needsNotesFolder()
+}
+
 const controller = new AgentController({
   isEnabled: () => getSetting('agentEnabled'),
   getHarness: () => getSetting('agentHarness'),
   emit,
   askPermission,
   askBuffer,
+  askNotesFolder,
   dismissSheets,
   onFileWritten: (path, created) => sendToWindow('agent:file-written', { path: rendererPath(path), created }),
   fallbackDirectory: () => nodePath.join(app.getPath('userData'), 'Agent'),
@@ -141,6 +200,25 @@ export function setAgentEnabled(on: boolean): boolean {
   if (!next) void controller.stop()
   emit({ type: 'state', state: agentState() })
   return next
+}
+
+/** The library has no folders, so the agent has nowhere to save. */
+export function needsNotesFolder(): boolean {
+  return controller.needsNotesFolder()
+}
+
+const notesFolderListeners = new Set<() => void>()
+
+/** Hears every time `needsNotesFolder()` flips (the menu item follows it). */
+export function onNotesFolderNeedChange(listener: () => void): () => void {
+  notesFolderListeners.add(listener)
+  return () => { notesFolderListeners.delete(listener) }
+}
+
+/** Integrations ▸ Agent ▸ Add Notes Folder…: the dialog, then the folder in
+    the library. Main-only; false when declined or not applicable. */
+export function addNotesFolder(): Promise<boolean> {
+  return controller.addNotesFolder()
 }
 
 /** The harness the menu shows as chosen. */
@@ -197,6 +275,7 @@ const fromWindow = (event: IpcMainEvent | IpcMainInvokeEvent) =>
 /** Registers once; later calls rebind the window events are sent to. */
 export function registerAgentIpc(window: BrowserWindow): void {
   current = window
+  registerLibraryAdopt(window)
   if (registered) return
   registered = true
 
@@ -246,8 +325,12 @@ export function registerAgentIpc(window: BrowserWindow): void {
       .slice(0, 5000)
     if (activePath && !openPaths.includes(activePath)) openPaths.push(activePath)
     spellings.update(openPaths, roots)
-    controller.setContext({ roots, activePath, openPaths })
+    const needed = controller.needsNotesFolder()
+    controller.setContext({ roots, activePath, openPaths, activeDraft: record.activeDraft === true })
+    if (needed !== controller.needsNotesFolder()) for (const listener of notesFolderListeners) listener()
   })
+  handle('agent:add-notes-folder', async (event): Promise<boolean> =>
+    fromWindow(event) ? controller.addNotesFolder() : false)
   on('agent:permission-response', (event, response: unknown) => {
     if (!fromWindow(event)) return
     const record = typeof response === 'object' && response !== null ? response as Record<string, unknown> : {}

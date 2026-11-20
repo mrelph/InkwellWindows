@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Minus, Plus, Type } from 'lucide-react'
 import { publishInstalledFonts } from '../fonts/installedFonts'
 import { DEFAULT_READER_FONT, READER_FONTS, readerFontLabel } from '../fonts/readerFonts'
+import { APPEARANCE_LABELS, APPEARANCE_VALUES, APP_THEME_LABELS, APP_THEME_VALUES } from '../../src-electron/ipc/contract'
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, ZOOM_STEP } from '../lib/limits'
 
 /* Reading font and display zoom (Mac ContentView.AppearancePanel). Owned by
@@ -11,6 +12,10 @@ import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, ZOOM_STEP } from '../lib/limits'
 export type AppearanceProps = {
   open: boolean
   setOpen: (open: boolean | ((current: boolean) => boolean)) => void
+  appearance: AppearanceMode
+  setAppearance: (mode: AppearanceMode) => void
+  theme: AppTheme
+  setTheme: (theme: AppTheme) => void
   readerFont: ReaderFont
   setReaderFont: (font: ReaderFont) => void
   zoomLevel: number
@@ -24,7 +29,7 @@ type Props = AppearanceProps & {
   hideButton?: boolean
 }
 
-export function AppearancePopover({ open, setOpen, readerFont, setReaderFont, zoomLevel, changeZoom, reset, hideButton }: Props) {
+export function AppearancePopover({ open, setOpen, appearance, setAppearance, theme, setTheme, readerFont, setReaderFont, zoomLevel, changeZoom, reset, hideButton }: Props) {
   const control = useRef<HTMLDivElement>(null)
   const [installed, setInstalled] = useState(publishInstalledFonts)
 
@@ -45,10 +50,10 @@ export function AppearancePopover({ open, setOpen, readerFont, setReaderFont, zo
       {!hideButton && (
         <button
           className="icon-button"
-          aria-label="Reading font and display zoom"
+          aria-label="Appearance, theme, reading font and zoom"
           aria-haspopup="dialog"
           aria-expanded={open}
-          title="Reading font and display zoom"
+          title="Appearance, theme, reading font and zoom"
           onClick={() => setOpen((current) => !current)}
         >
           <Type size={18} strokeWidth={1.7} />
@@ -57,6 +62,29 @@ export function AppearancePopover({ open, setOpen, readerFont, setReaderFont, zo
       {open && (
         <div className="appearance-panel" role="dialog" aria-label="Appearance">
           <p className="appearance-heading"><Type size={15} strokeWidth={1.8} /> Appearance</p>
+          <div className="appearance-field" role="group" aria-label="Mode">
+            Mode
+            <div className="segmented" role="radiogroup" aria-label="Mode">
+              {APPEARANCE_VALUES.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={appearance === value}
+                  className={appearance === value ? 'active' : ''}
+                  onClick={() => setAppearance(value)}
+                >
+                  {APPEARANCE_LABELS[value]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="appearance-field" htmlFor="app-theme">
+            Theme
+            <select id="app-theme" value={theme} onChange={(event) => setTheme(event.target.value as AppTheme)}>
+              {APP_THEME_VALUES.map((value) => <option key={value} value={value}>{APP_THEME_LABELS[value]}</option>)}
+            </select>
+          </label>
           <label className="appearance-field" htmlFor="reader-font">
             Reading font
             <select
@@ -85,7 +113,7 @@ export function AppearancePopover({ open, setOpen, readerFont, setReaderFont, zo
           <button
             type="button"
             className="appearance-reset"
-            disabled={readerFont === DEFAULT_READER_FONT && zoomLevel === DEFAULT_ZOOM}
+            disabled={appearance === 'system' && theme === 'inkwell' && readerFont === DEFAULT_READER_FONT && zoomLevel === DEFAULT_ZOOM}
             onClick={reset}
           >
             Reset appearance

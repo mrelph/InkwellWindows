@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, ClipboardCopy, Copy, FolderOpen, PencilLine, Trash2, X } from 'lucide-react'
 import { AgentPanel } from '../agent/AgentPanel'
 import type { AppearanceProps } from '../components/AppearancePopover'
+import { isAppTheme, isAppearanceMode } from '../../src-electron/ipc/contract'
+import type { FolderResult } from '../../src-electron/ipc/contract'
 import { EmptyState } from '../components/EmptyState'
 import { Header } from '../components/Header'
 import { Outline } from '../components/Outline'
@@ -70,6 +72,8 @@ export function App() {
   const [ephyEnabled, setEphyEnabled] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   const [readerFont, setReaderFont] = useState<ReaderFont>(DEFAULT_READER_FONT)
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('system')
+  const [appTheme, setAppTheme] = useState<AppTheme>('inkwell')
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
   const [ephyLinks, setEphyLinks] = useState<Record<string, EphyLink>>({})
@@ -124,7 +128,7 @@ export function App() {
       try {
         state = await bridge.loadState()
       } catch {
-        state = { folders: [], recent: [], readerFont: DEFAULT_READER_FONT, zoomLevel: DEFAULT_ZOOM, view: 'split', ephyLinks: {} }
+        state = { folders: [], recent: [], readerFont: DEFAULT_READER_FONT, zoomLevel: DEFAULT_ZOOM, view: 'split', appearance: 'system', theme: 'inkwell', ephyLinks: {} }
       }
 
       const results = await Promise.all(state.folders.map(async (folder) => {
@@ -161,6 +165,8 @@ export function App() {
       setFolders(folderList)
       setRecent((current) => mergeRestoredRecent(state.recent, current, MAX_RECENT))
       setReaderFont(state.readerFont)
+      setAppearanceMode(state.appearance)
+      setAppTheme(state.theme)
       setZoomLevel(state.zoomLevel)
       setView(state.view)
       setEphyLinks((current) => ({ ...state.ephyLinks, ...current }))
@@ -193,11 +199,20 @@ export function App() {
         readerFont,
         zoomLevel,
         view,
+        appearance: appearanceMode,
+        theme: appTheme,
         ephyLinks
       })
     }, 400)
     return () => window.clearTimeout(handle)
-  }, [restored, folders, recent, activeDocument?.path, readerFont, zoomLevel, view, ephyLinks])
+  }, [restored, folders, recent, activeDocument?.path, readerFont, zoomLevel, view, appearanceMode, appTheme, ephyLinks])
+
+  /* Main owns the palette: it forces the native theme, repaints the window
+     background and answers on theme:changed. Not sent before the stored choice
+     is read back, or the defaults would override what main loaded at startup. */
+  useEffect(() => {
+    if (restored) window.inkwell?.setAppearance?.({ appearance: appearanceMode, theme: appTheme })
+  }, [restored, appearanceMode, appTheme])
 
   /* Typography stays a renderer concern; whole-display zoom uses Electron's
      native page zoom so chrome, editor and reader scale together. */
@@ -294,42 +309,49 @@ export function App() {
 
   /* Adding a folder is additive too. It is a *source*: a place the library
      watches, not a workspace that replaces what is already open. */
+  const adoptFolder = useCallback((result: FolderResult): boolean => {
+    if (result.refused) {
+      setNotice(result.refused)
+      return false
+    }
+    if (!result.folder) return false
+    const folders = foldersRef.current
+    const overlap = folders.find((folder) => isInside(result.folder, folder.path) || isInside(folder.path, result.folder))
+    if (overlap) {
+      setNotice(samePath(overlap.path, result.folder)
+        ? `${overlap.name} is already in the library`
+        : `That folder overlaps ${overlap.name}, which is already here`)
+      return false
+    }
+    if (folders.length >= MAX_FOLDERS) {
+      setNotice(`${MAX_FOLDERS} folders is the limit — remove one first`)
+      return false
+    }
+    const id = folderIdFor(result.folder)
+    const source: FolderSource = { id, name: folderLabel(result.folder), path: result.folder }
+    foldersRef.current = [...folders, source]
+    setFolders((current) => [...current, source])
+    setDocuments((current) => {
+      /* A file opened ad hoc that lives in this folder now belongs to it. */
+      const adopted = current.map((doc) => (doc.path && isInside(doc.path, result.folder) ? { ...doc, sourceId: id } : doc))
+      const fresh = result.documents
+        .filter((file) => !adopted.some((doc) => samePath(doc.path, file.path)))
+        .map((file) => toDoc(file, id))
+      return [...adopted, ...fresh]
+    })
+    setActiveId((current) => current ?? (result.documents[0] ? fileIdFor(result.documents[0].path) : null))
+    setNotice(`Added ${source.name} · ${plural(result.documents.length, 'file')}`)
+    return true
+  }, [])
+
   const addFolder = useCallback(async () => {
     try {
       const result = await window.inkwell?.openFolder()
-      if (result?.refused) {
-        setNotice(result.refused)
-        return
-      }
-      if (!result?.folder) return
-      const overlap = folders.find((folder) => isInside(result.folder, folder.path) || isInside(folder.path, result.folder))
-      if (overlap) {
-        setNotice(samePath(overlap.path, result.folder)
-          ? `${overlap.name} is already in the library`
-          : `That folder overlaps ${overlap.name}, which is already here`)
-        return
-      }
-      if (folders.length >= MAX_FOLDERS) {
-        setNotice(`${MAX_FOLDERS} folders is the limit — remove one first`)
-        return
-      }
-      const id = folderIdFor(result.folder)
-      const source: FolderSource = { id, name: folderLabel(result.folder), path: result.folder }
-      setFolders((current) => [...current, source])
-      setDocuments((current) => {
-        /* A file opened ad hoc that lives in this folder now belongs to it. */
-        const adopted = current.map((doc) => (doc.path && isInside(doc.path, result.folder) ? { ...doc, sourceId: id } : doc))
-        const fresh = result.documents
-          .filter((file) => !adopted.some((doc) => samePath(doc.path, file.path)))
-          .map((file) => toDoc(file, id))
-        return [...adopted, ...fresh]
-      })
-      setActiveId((current) => current ?? (result.documents[0] ? fileIdFor(result.documents[0].path) : null))
-      setNotice(`Added ${source.name} · ${plural(result.documents.length, 'file')}`)
+      if (result) adoptFolder(result)
     } catch {
       setNotice('Could not read that folder — check permissions and try again')
     }
-  }, [folders])
+  }, [adoptFolder])
 
   /* Re-reads a folder from disk. Documents with unsaved edits are kept as they
      are: a refresh must never be a way to lose typing. */
@@ -690,6 +712,8 @@ export function App() {
 
   const resetAppearance = useCallback(() => {
     setReaderFont(DEFAULT_READER_FONT)
+    setAppearanceMode('system')
+    setAppTheme('inkwell')
     setZoomLevel(DEFAULT_ZOOM)
   }, [])
 
@@ -752,6 +776,8 @@ export function App() {
   useCommand('zoomOut', () => changeZoom(-ZOOM_STEP))
   useCommand('zoomReset', () => setZoomLevel(DEFAULT_ZOOM))
   useCommand('setReaderFont', (arg) => { if (arg && READER_FONT_VALUES.has(arg)) setReaderFont(arg as ReaderFont) })
+  useCommand('setAppearance', (arg) => { if (isAppearanceMode(arg)) setAppearanceMode(arg) })
+  useCommand('setTheme', (arg) => { if (isAppTheme(arg)) setAppTheme(arg) })
   useCommand('toggleFullScreen', () => window.inkwell?.fullScreen?.toggle())
   useCommand('escape', escape)
   useCommand('toggleAgentPanel', () => { if (agentEnabled) setAgentOpen((open) => !open) })
@@ -811,10 +837,12 @@ export function App() {
     outlineOpen,
     agentOpen,
     zoomLevel,
+    appearance: appearanceMode,
+    theme: appTheme,
     readerFont,
     readerFonts: menuReaderFonts,
     accelerators: ACCELERATORS
-  }), [recent, activeDocument, closableRow, view, focusMode, sidebarOpen, outlineOpen, agentOpen, zoomLevel, readerFont, menuReaderFonts])
+  }), [recent, activeDocument, closableRow, view, focusMode, sidebarOpen, outlineOpen, agentOpen, zoomLevel, appearanceMode, appTheme, readerFont, menuReaderFonts])
   const menuStateKey = JSON.stringify(menuState)
   useEffect(() => {
     window.inkwell?.menu?.setState(JSON.parse(menuStateKey) as MenuState)
@@ -826,13 +854,31 @@ export function App() {
   const agentRoots = folders.map((folder) => folder.path).join('\n')
   const openPaths = documents.flatMap((doc) => (doc.path ? [doc.path] : [])).join('\n')
   const activePath = activeDocument?.path
+  const activeDraft = Boolean(activeDocument && !activeDocument.path && activeDocument.sourceId === DRAFTS)
   useEffect(() => {
     window.inkwell?.agent?.setContext({
       roots: agentRoots ? agentRoots.split('\n') : [],
       activePath,
-      openPaths: openPaths ? openPaths.split('\n') : []
+      openPaths: openPaths ? openPaths.split('\n') : [],
+      activeDraft
     })
-  }, [agentRoots, activePath, openPaths])
+  }, [agentRoots, activePath, openPaths, activeDraft])
+
+  /* Main added a folder for the agent (its notes-folder offer): adopt it like
+     File ▸ Add Folder, then answer once it is in `folders`. The answer is sent
+     from the effect below, which runs AFTER the setContext effect above in the
+     same commit, so main sees the new agent roots before it hears the reply. */
+  const adoptRequest = useRef<{ requestId: string; folder: string } | null>(null)
+  useEffect(() => window.inkwell?.library?.onAdoptFolder((request) => {
+    if (adoptFolder(request.result)) adoptRequest.current = { requestId: request.requestId, folder: request.result.folder }
+    else window.inkwell?.library?.respondAdoptFolder({ requestId: request.requestId, ok: false })
+  }), [adoptFolder])
+  useEffect(() => {
+    const pending = adoptRequest.current
+    if (!pending || !folders.some((folder) => samePath(folder.path, pending.folder))) return
+    adoptRequest.current = null
+    window.inkwell?.library?.respondAdoptFolder({ requestId: pending.requestId, ok: true })
+  }, [folders])
 
   const activeDocumentValue = useMemo<ActiveDocumentValue>(() => ({
     doc: activeDocument
@@ -891,6 +937,10 @@ export function App() {
   const appearance: AppearanceProps = {
     open: appearanceOpen,
     setOpen: setAppearanceOpen,
+    appearance: appearanceMode,
+    setAppearance: setAppearanceMode,
+    theme: appTheme,
+    setTheme: setAppTheme,
     readerFont,
     setReaderFont,
     zoomLevel,

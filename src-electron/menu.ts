@@ -1,11 +1,11 @@
 import { app, BrowserWindow, dialog, Menu, type MenuItemConstructorOptions } from 'electron'
 import { on } from './ipcGuard'
 import { mayReadDocument } from './trustedDocuments'
-import { isReaderFont, type CommandId, type MenuCommand, type MenuState, type ReaderFont } from './ipc/contract'
+import { APPEARANCE_LABELS, APPEARANCE_VALUES, APP_THEME_LABELS, APP_THEME_VALUES, isAppTheme, isAppearanceMode, isReaderFont, type CommandId, type MenuCommand, type MenuState, type ReaderFont } from './ipc/contract'
 import { onSettingChange } from './settings'
 import { isSpellcheckEnabled, setSpellcheckEnabled } from './contextMenu'
 import { getAutoCheck, setAutoCheck } from './update'
-import { isAgentEnabled, setAgentEnabled } from './acp/index'
+import { addNotesFolder, isAgentEnabled, needsNotesFolder, onNotesFolderNeedChange, setAgentEnabled } from './acp/index'
 import { isEphyEnabled, setEphyEnabled } from './ephy/index'
 
 /* The application menu (File / Edit / View / Integrations / Help), Open Recent
@@ -59,6 +59,8 @@ const EMPTY_STATE: MenuState = {
   outlineOpen: false,
   agentOpen: false,
   zoomLevel: 100,
+  appearance: 'system',
+  theme: 'inkwell',
   readerFont: 'editorial',
   readerFonts: FALLBACK_READER_FONTS,
   accelerators: {}
@@ -148,6 +150,8 @@ function sanitizeState(raw: Record<string, unknown>): MenuState {
     outlineOpen: bool('outlineOpen'),
     agentOpen: bool('agentOpen'),
     zoomLevel: typeof raw.zoomLevel === 'number' ? raw.zoomLevel : 100,
+    appearance: isAppearanceMode(raw.appearance) ? raw.appearance : 'system',
+    theme: isAppTheme(raw.theme) ? raw.theme : 'inkwell',
     readerFont: font,
     readerFonts: readerFonts.length ? readerFonts : FALLBACK_READER_FONTS,
     accelerators
@@ -280,6 +284,24 @@ function buildTemplate(s: MenuState): MenuItemConstructorOptions[] {
     command('&Actual Size', 'zoomReset', { enabled: s.zoomLevel !== 100 }),
     { type: 'separator' },
     {
+      label: '&Appearance',
+      submenu: [
+        ...APPEARANCE_VALUES.map((value): MenuItemConstructorOptions => ({
+          label: APPEARANCE_LABELS[value],
+          type: 'radio',
+          checked: s.appearance === value,
+          click: () => sendMenuCommand('setAppearance', value)
+        })),
+        { type: 'separator' },
+        ...APP_THEME_VALUES.map((value): MenuItemConstructorOptions => ({
+          label: APP_THEME_LABELS[value],
+          type: 'radio',
+          checked: s.theme === value,
+          click: () => sendMenuCommand('setTheme', value)
+        }))
+      ]
+    },
+    {
       label: 'Reading &Font',
       submenu: s.readerFonts.flatMap((choice): MenuItemConstructorOptions[] => [
         ...(choice.separated ? [{ type: 'separator' as const }] : []),
@@ -315,7 +337,15 @@ function buildTemplate(s: MenuState): MenuItemConstructorOptions[] {
       }
     },
     { type: 'separator' },
-    command(s.agentOpen ? 'Hide Agent &Panel' : 'Show Agent &Panel', 'toggleAgentPanel', { enabled: agentEnabled })
+    command(s.agentOpen ? 'Hide Agent &Panel' : 'Show Agent &Panel', 'toggleAgentPanel', { enabled: agentEnabled }),
+    /* Only while the agent is on and the library has no folder to save in.
+       Acts in main (the dialog and the trust are main's), not as a command. */
+    {
+      label: 'Add &Notes Folder…',
+      visible: agentEnabled && needsNotesFolder(),
+      enabled: agentEnabled && needsNotesFolder(),
+      click: () => { void addNotesFolder() }
+    }
   ]
 
   const help: MenuItemConstructorOptions[] = [
@@ -398,14 +428,17 @@ export function registerMenu(window: BrowserWindow): void {
   let resolve: () => void = () => undefined
   const promise = new Promise<void>((done) => { resolve = done })
   rendererReady = { promise, resolve }
-  // Hidden until Alt is pressed; Alt toggles it.
-  window.setAutoHideMenuBar(true)
+  // Always shown, like the Mac menu bar, so Integrations is discoverable.
+  window.setAutoHideMenuBar(false)
+  window.setMenuBarVisibility(true)
   if (registered) return
   registered = true
   rebuild()
   registerJumpListTasks()
   /* The enable toggles, spellcheck and auto-check live in settings; whoever
      flips one (this menu, the context menu, a panel), the checkmarks follow. */
+  // Add Notes Folder… appears and goes as the library gains and loses folders.
+  onNotesFolderNeedChange(() => scheduleRebuild(true))
   onSettingChange((key) => {
     if (key === 'agentEnabled' || key === 'ephyEnabled' || key === 'spellcheck' || key === 'autoUpdateCheck') scheduleRebuild(true)
   })

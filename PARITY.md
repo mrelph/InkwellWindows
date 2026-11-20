@@ -1,6 +1,6 @@
 # Inkwell for Windows — Parity with InkwellMac
 
-Reference: `mrelph/InkwellMac` @ `78320c1` (v0.1.0, Swift/SwiftUI). Target: this repo @ `2b34c42` (v0.1.4, Electron/React).
+Reference: `mrelph/InkwellMac` @ `f09b626` (v1.0.0, Swift/SwiftUI; originally ported from `78320c1`, v0.1.0). Target: this repo @ `2b34c42` (v0.1.4, Electron/React).
 Goal: Windows offers the same functions, design, and capabilities as Mac, expressed in Windows idioms (Ctrl not ⌘, Explorer not Finder, Recycle Bin not Trash, F11 for full screen, jump lists for recents).
 
 Status legend: **✅ parity** · **🟡 partial** · **❌ missing** · **➕ Windows-only (keep)**
@@ -28,7 +28,7 @@ workstreams) and the integration pass, checked by `pnpm typecheck`, `pnpm test`,
   open the release page instead. The manual check answers in a native message
   box (Install / Later / Skip This Version), like Mac's alert.
 - **No Window menu.** Windows' native frame and taskbar own window management;
-  the menu is File / Edit / View / Integrations / Help, hidden until Alt.
+  the menu is File / Edit / View / Integrations / Help, always visible like the Mac menu bar.
 - **Jump list instead of the Dock menu:** Recent files plus a "New note" task
   (`--new-note`).
 - **h4–h6 stay uppercase**, which matches Mac's actual source and screenshots
@@ -138,7 +138,8 @@ View ▸ Reading Font, built from the renderer's list.
 | Light/dark following OS, live | ✅ | — |
 | Contrast-enforced token derivation | ✅ | `theme.ts`; TOML reader strips trailing `# comments` |
 | Base palettes match Mac | ✅ | Light `#fbf8f1` / `#1b6366`, dark `#171b1d` / `#67b5b3` |
-| Custom theme UI | ✅ (neither) | — |
+| App appearance: System / Light / Dark | ✅ | View ▸ Appearance and the Aa panel; `nativeTheme.themeSource` so the menu and dialogs match; saved as `appearance` in library.json (Mac `8e65b44`) |
+| Themes: Inkwell, Paper, Slate, Forest, Midnight | ✅ | Mac hex specs copied exactly into `theme.ts` and run through the same contrast pipeline; muted/secondary also clear 4.5:1 on the canvas; saved as `theme`; an Omarchy theme still wins on Linux |
 
 ## 8. Platform integration
 
@@ -154,7 +155,7 @@ View ▸ Reading Font, built from the renderer's list.
 
 | Feature | Win | Notes |
 |---|---|---|
-| Agent panel (ACP) | ✅ | Kiro CLI / Codex / Claude Code over stdio; sandboxed fs (UNC refused before any fs call), allow-once diff sheet, every open note matched by real path (`acp/spellings.ts`, Mac `document(atResolvedPath:)`) and drafts by id edited in their buffer, new files refresh their library folder, link confirmation; harness and "Include current note" persisted in settings |
+| Agent panel (ACP) | ✅ | Kiro CLI / Codex / Claude Code over stdio; sandboxed fs (UNC refused before any fs call), allow-once diff sheet, every open note matched by real path (`acp/spellings.ts`, Mac `document(atResolvedPath:)`) and drafts by id edited in their buffer, new files refresh their library folder, link confirmation; harness and "Include current note" persisted in settings. With no library folder, the agent's first new note offers Create `Documents\Inkwell` / Choose Folder… / Not Now and retries the write once through Allow Once; also Integrations ▸ Agent ▸ Add Notes Folder… and the panel's folder button (Mac `7e3b6e8`) |
 | Ephy | ✅ | Through the `ephy` CLI; open, save (conflict / gone handling), Save as New re-keys a draft or Ephy note into the new artifact (Mac), Get Latest, open in browser. Needs the CLI and `mwinit` on the machine |
 
 ## 10. Keyboard map (Mac → Windows)

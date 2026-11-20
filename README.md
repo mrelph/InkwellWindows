@@ -14,7 +14,9 @@ controls, filesystem dialogs, paths, trash, theme detection, and packaging.
 - Use focus writing without losing the current view mode.
 - Render GitHub-flavored Markdown, including tables and task lists.
 - Navigate long documents with the generated outline.
-- Follow the Windows light or dark setting without restarting.
+- Follow the Windows light or dark setting without restarting, or force Light or
+  Dark and pick a theme (Inkwell, Paper, Slate, Forest, Midnight) from View ▸
+  Appearance or the Aa button.
 - Work locally with no account or cloud service.
 
 ## Install for development
@@ -86,7 +88,6 @@ identify the publisher.
 | `Ctrl+Alt+A` | Show / hide the agent panel |
 | `Ctrl+Shift+E` | Open from Ephy (when Ephy is enabled) |
 | `Escape` | Leave focus writing, otherwise close the outline |
-| `Alt` | Reveal the menu bar (hidden by default) |
 
 You can also pass a file directly:
 

@@ -161,7 +161,7 @@ describe('library folders come from main only (finding 4)', () => {
     expect(await call('document:open-folder')).toMatchObject({ folder: '', refused: expect.stringMatching(/home folder/) })
   })
   it('state:save can drop a folder but not add one', async () => {
-    await call('state:save', { folders: [library, notes, '\\\\attacker\\share'], recent: [{ path: nodePath.join(base, 'x.md'), name: 'x', openedAt: 0 }], readerFont: 'editorial', zoomLevel: 100, view: 'split', ephyLinks: {} })
+    await call('state:save', { folders: [library, notes, '\\\\attacker\\share'], recent: [{ path: nodePath.join(base, 'x.md'), name: 'x', openedAt: 0 }], readerFont: 'editorial', zoomLevel: 100, view: 'split', appearance: 'system', theme: 'inkwell', ephyLinks: {} })
     await vi.waitFor(() => {
       const saved = JSON.parse(readFileSync(nodePath.join(hoisted.userData, 'library.json'), 'utf8'))
       expect(saved.folders).toEqual([library])

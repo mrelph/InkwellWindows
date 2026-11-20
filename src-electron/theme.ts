@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { watch } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { isAppTheme, isAppearanceMode, type AppTheme, type AppearanceMode } from './ipc/contract'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                                */
@@ -305,10 +306,10 @@ const finalizeTokens = (
   const textPrimary = pickFirstPassingContrast(textPrimaryCandidates, 4.5, [surfaceReader])
 
   const mutedBase = isValidHex(mutedRaw) ? normalizeHex(mutedRaw) : mixColors(textPrimary, surfaceChrome, 0.35)
-  const textMuted = enforceContrastFloor(mutedBase, textPrimary, 4.5, [surfacePanel, surfaceChrome])
+  const textMuted = enforceContrastFloor(mutedBase, textPrimary, 4.5, [surfacePanel, surfaceCanvas, surfaceChrome])
 
   const secondaryBase = mixColors(textPrimary, surfaceChrome, 0.24)
-  const textSecondary = enforceContrastFloor(secondaryBase, textPrimary, 4.5, [surfacePanel, surfaceChrome])
+  const textSecondary = enforceContrastFloor(secondaryBase, textPrimary, 4.5, [surfacePanel, surfaceCanvas, surfaceChrome])
 
   const surfaceRaised = mixColors(surfacePanel, surfaceReader, 0.4)
   const surfaceCode = deriveSurfaceCode(surfaceReader, surfacePanel)
@@ -357,25 +358,78 @@ const finalizeTokens = (
   }
 }
 
-/* System fallback (non-Omarchy systems). It follows the host light/dark mode
-   while keeping Inkwell's editorial palette and the same contrast pipeline. */
-const buildFallbackTokens = (mode: ThemeMode = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'): ThemeTokens => {
-  const surfaces: [string, string, string, string] = mode === 'dark'
-    ? ['#171b1d', '#202629', '#272e31', '#111517']
-    : ['#fbf8f1', '#e9e2d6', '#e8e1d5', '#f7f3ec']
+/* The app themes (Mac AppTheme.swift, copied exactly). Each has a light and a
+   dark spec; every one goes through finalizeTokens like any other palette.
+   Fonts are not part of a theme. */
+type ThemeSpec = { reader: string; panel: string; canvas: string; chrome: string; text: string; muted: string; accent: string }
+
+export const APP_THEME_SPECS: Record<AppTheme, Record<ThemeMode, ThemeSpec>> = {
+  inkwell: {
+    light: { reader: '#fbf8f1', panel: '#e9e2d6', canvas: '#e8e1d5', chrome: '#f7f3ec', text: '#1c2b31', muted: '#6b6459', accent: '#1b6366' },
+    dark: { reader: '#171b1d', panel: '#202629', canvas: '#272e31', chrome: '#111517', text: '#f4eee3', muted: '#b9b0a4', accent: '#67b5b3' }
+  },
+  paper: {
+    light: { reader: '#f6efdf', panel: '#e6d9bf', canvas: '#e4d6bb', chrome: '#f1e7d2', text: '#3b2f22', muted: '#6a5843', accent: '#8a4b1f' },
+    dark: { reader: '#1e1a15', panel: '#29231c', canvas: '#312a21', chrome: '#16130f', text: '#eadcc4', muted: '#bba98c', accent: '#d39a5c' }
+  },
+  slate: {
+    light: { reader: '#f7f9fb', panel: '#e2e8ef', canvas: '#dfe5ec', chrome: '#f0f3f7', text: '#1e2a38', muted: '#536073', accent: '#2f5f8f' },
+    dark: { reader: '#161b22', panel: '#1e252e', canvas: '#252d37', chrome: '#10141a', text: '#e4eaf1', muted: '#a6b1bf', accent: '#7aa7d6' }
+  },
+  forest: {
+    light: { reader: '#f6f8f3', panel: '#dfe7da', canvas: '#dce4d6', chrome: '#eff3eb', text: '#1d2b22', muted: '#516253', accent: '#2e6b45' },
+    dark: { reader: '#121a15', panel: '#19241d', canvas: '#1f2c24', chrome: '#0d130f', text: '#e3ece4', muted: '#a3b5a7', accent: '#6fbf8a' }
+  },
+  midnight: {
+    light: { reader: '#ffffff', panel: '#eceef4', canvas: '#e6e9f1', chrome: '#f6f7fb', text: '#0a0e1a', muted: '#3d4458', accent: '#3b3fb5' },
+    dark: { reader: '#05070d', panel: '#0c1020', canvas: '#11162a', chrome: '#000000', text: '#ffffff', muted: '#c4cae0', accent: '#8e9bff' }
+  }
+}
+
+/** Tokens for an app theme in a given mode (Mac `AppTheme.tokens(_:)`). */
+export const appThemeTokens = (appTheme: AppTheme, mode: ThemeMode): ThemeTokens => {
+  const spec = APP_THEME_SPECS[appTheme][mode]
   return finalizeTokens(
     mode,
-    `system-${mode}`,
-    surfaces,
-    mode === 'dark'
-      ? ['#f4eee3', '#ffffff', '#000000']
-      : ['#1c2b31', '#ffffff', '#000000'],
-    mode === 'dark' ? '#b9b0a4' : '#6b6459',
-    mode === 'dark' ? '#67b5b3' : '#1b6366',
+    appTheme === 'inkwell' ? `system-${mode}` : `${appTheme}-${mode}`,
+    [spec.reader, spec.panel, spec.canvas, spec.chrome],
+    [spec.text, '#ffffff', '#000000'],
+    spec.muted,
+    spec.accent,
     undefined,
-    mode === 'dark' ? ['#f4eee3'] : ['#1c2b31']
+    [spec.text]
   )
 }
+
+/* The user's choice (View ▸ Appearance). Main owns the live value: it is set
+   from library.json before the window exists, then by `theme:set-appearance`. */
+let currentAppearance: AppearanceMode = 'system'
+let currentAppTheme: AppTheme = 'inkwell'
+
+export const getAppearance = (): { appearance: AppearanceMode; theme: AppTheme } =>
+  ({ appearance: currentAppearance, theme: currentAppTheme })
+
+/** Validates, stores and forces the native theme so menus and dialogs match.
+    Returns false (and changes nothing) for a value outside the enums. */
+export function setAppearance(appearance: unknown, appTheme: unknown): boolean {
+  if (!isAppearanceMode(appearance) || !isAppTheme(appTheme)) return false
+  currentAppearance = appearance
+  currentAppTheme = appTheme
+  try {
+    nativeTheme.themeSource = appearance
+  } catch {
+    /* Not fatal: tokens below are computed from the choice, not read back. */
+  }
+  return true
+}
+
+const effectiveMode = (): ThemeMode =>
+  currentAppearance === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : currentAppearance
+
+/* Non-Omarchy fallback. It follows the chosen mode (System = the host) and
+   theme, through the same contrast pipeline. Inkwell is the default palette. */
+const buildFallbackTokens = (mode: ThemeMode = effectiveMode()): ThemeTokens =>
+  appThemeTokens(currentAppTheme, mode)
 
 /* ------------------------------------------------------------------ */
 /* Public API                                                          */

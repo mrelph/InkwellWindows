@@ -11,6 +11,8 @@ declare global {
   type RecentEntry = Contract.RecentEntry
   type ReaderFont = Contract.ReaderFont
   type ViewMode = Contract.ViewMode
+  type AppearanceMode = Contract.AppearanceMode
+  type AppTheme = Contract.AppTheme
   type EphyLink = Contract.EphyLink
   /** The remembered library: folder sources, recent files, and where you were. */
   type InkwellState = Contract.InkwellState

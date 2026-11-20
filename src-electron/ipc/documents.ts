@@ -103,6 +103,20 @@ function sanitizeForSave(next: unknown): unknown {
 
 const text = (value: unknown) => (typeof value === 'string' ? value.slice(0, MAX_NAME_TEXT) : '')
 
+/** A folder main itself chose or the user picked in a dialog (Add Folder, or
+    the agent's notes-folder offer): checked, trusted in memory at once so its
+    images and notes are allowed before the renderer's debounced library.json
+    save lands, and read. The renderer then adds it to the library; it never
+    names the folder. */
+export async function trustAndReadLibraryFolder(folder: string): Promise<FolderResult> {
+  const verdict = checkLibraryFolder(folder)
+  if (!verdict.ok) return { ...EMPTY_FOLDER, refused: verdict.reason }
+  trustLibraryFolder(verdict.folder)
+  const documents = await walkMarkdownFiles(verdict.folder)
+  trustDocuments(documents)
+  return { folder: verdict.folder, documents }
+}
+
 /** Registers once; `getWindow` names the window dialogs attach to. */
 export function registerDocumentIpc(getWindow: () => BrowserWindow | null): void {
   if (registered) return
@@ -153,14 +167,7 @@ export function registerDocumentIpc(getWindow: () => BrowserWindow | null): void
         properties: ['openDirectory']
       })
       if (selection.canceled || !selection.filePaths[0]) return EMPTY_FOLDER
-      const verdict = checkLibraryFolder(selection.filePaths[0])
-      if (!verdict.ok) return { ...EMPTY_FOLDER, refused: verdict.reason }
-      /* Trusted the moment the dialog returns, so its images and notes are
-         allowed before the renderer's debounced library.json save lands. */
-      trustLibraryFolder(verdict.folder)
-      const documents = await walkMarkdownFiles(verdict.folder)
-      trustDocuments(documents)
-      return { folder: verdict.folder, documents }
+      return await trustAndReadLibraryFolder(selection.filePaths[0])
     } catch {
       return EMPTY_FOLDER
     }

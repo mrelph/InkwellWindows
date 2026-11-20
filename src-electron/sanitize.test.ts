@@ -27,7 +27,7 @@ const loadWith = async (raw: string | object | undefined) => {
   return loadState()
 }
 
-const DEFAULT = { folders: [], recent: [], readerFont: 'editorial', zoomLevel: 100, view: 'split', ephyLinks: {} }
+const DEFAULT = { folders: [], recent: [], readerFont: 'editorial', zoomLevel: 100, view: 'split', appearance: 'system', theme: 'inkwell', ephyLinks: {} }
 
 describe('state.ts sanitize-on-load', () => {
   it('returns defaults when there is no file', async () => {
@@ -80,6 +80,31 @@ describe('state.ts sanitize-on-load', () => {
     for (const view of ['READ', 'focus', '', null, 1, ['read']]) expect((await loadWith({ view })).view).toBe('split')
   })
 
+  it('appearance and theme: known values kept, anything else falls back', async () => {
+    for (const appearance of ['system', 'light', 'dark']) expect((await loadWith({ appearance })).appearance).toBe(appearance)
+    for (const theme of ['inkwell', 'paper', 'slate', 'forest', 'midnight']) expect((await loadWith({ theme })).theme).toBe(theme)
+    for (const bad of ['neon', 'DARK', '', null, 7, ['dark'], {}]) {
+      const state = await loadWith({ appearance: bad, theme: bad })
+      expect(state.appearance).toBe('system')
+      expect(state.theme).toBe('inkwell')
+    }
+    const old = await loadWith({ zoomLevel: 110 })
+    expect([old.appearance, old.theme]).toEqual(['system', 'inkwell'])
+    const both = await loadWith({ appearance: 'dark', theme: 'midnight' })
+    expect([both.appearance, both.theme]).toEqual(['dark', 'midnight'])
+  })
+
+  it('appearance and theme round-trip through saveState', async () => {
+    const { loadState, saveState } = await import('./state')
+    for (const appearance of ['system', 'light', 'dark'] as const) {
+      for (const theme of ['inkwell', 'paper', 'slate', 'forest', 'midnight'] as const) {
+        await saveState({ ...(await loadState()), appearance, theme })
+        const back = await loadState()
+        expect([back.appearance, back.theme]).toEqual([appearance, theme])
+      }
+    }
+  })
+
   it('readerFont accepts only known fonts', async () => {
     for (const readerFont of ['editorial', 'classic', 'sans', 'system', 'mono']) {
       expect((await loadWith({ readerFont })).readerFont).toBe(readerFont)
@@ -101,7 +126,7 @@ describe('state.ts sanitize-on-load', () => {
   it('drops unknown fields', async () => {
     const state = await loadWith({ introDone: true, evil: { x: 1 }, folders: [abs('a')] })
     expect(Object.keys(state).sort()).toEqual(
-      ['activePath', 'ephyLinks', 'folders', 'readerFont', 'recent', 'view', 'zoomLevel'].sort()
+      ['activePath', 'appearance', 'ephyLinks', 'folders', 'readerFont', 'recent', 'theme', 'view', 'zoomLevel'].sort()
     )
   })
 

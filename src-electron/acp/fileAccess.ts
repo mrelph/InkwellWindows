@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import nodePath from 'node:path'
 import { RPC, RPCError, type JsonValue } from './jsonrpc'
+import { isNetworkPath } from '../pathRules'
 import { isDirectory, type PathSandbox } from './pathSandbox'
 
 /* fs/read_text_file and fs/write_text_file, checked by the client itself (the
@@ -38,12 +39,27 @@ export type FileAccessHost = {
   confirmWrite: (request: WriteRequest) => Promise<boolean>
   /** Called after a write lands on disk. */
   didWriteFile?: (path: string, created: boolean) => void
+  /** Asked when a new file is refused only because no folder is shared. True
+      once the user added a folder; the write is then tried once more. */
+  offerNotesFolder?: (path: string) => Promise<boolean>
+}
+
+export const NO_FOLDERS_MESSAGE =
+  'No notes folder is shared yet. Inkwell has asked the user to add one. Do not invent a path; wait and retry.'
+export const DECLINED_MESSAGE =
+  'No notes folder is shared yet. The user chose not to add one now. Do not invent a path or folder.'
+
+/** The refusal for "nothing is shared", as opposed to any other. */
+export function isNoFolders(error: unknown): error is RPCError {
+  return error instanceof RPCError && typeof error.data === 'object' && error.data !== null && !Array.isArray(error.data) &&
+    (error.data as { reason?: unknown }).reason === 'noFolders'
 }
 
 /** An error Inkwell's own checks raised, marked so the panel can say so. */
-export function refusal(code: number, message: string, folders?: string[]): RPCError {
+export function refusal(code: number, message: string, folders?: string[], reason?: string): RPCError {
   const data: { [key: string]: JsonValue } = { refusedBy: 'inkwell' }
   if (folders) data.allowedFolders = folders
+  if (reason) data.reason = reason
   return new RPCError(code, message, data)
 }
 
@@ -60,7 +76,30 @@ export class AgentFileAccess {
     return slice(text, line, limit)
   }
 
+  /** A write. When it is refused only because no folder is shared and it
+      would make a new file, the host is asked once to offer a notes folder;
+      if one is added the write is tried once more, through the normal checks
+      and the Allow Once sheet. It never offers twice for one write. */
   async write(path: string, content: string): Promise<void> {
+    try {
+      await this.writeOnce(path, content)
+    } catch (error) {
+      if (!isNoFolders(error) || !this.host.offerNotesFolder || !await this.isCreate(path)) throw error
+      if (!await this.host.offerNotesFolder(path)) throw refusal(RPC.invalidParams, DECLINED_MESSAGE, [], 'noFolders')
+      await this.writeOnce(path, content)
+    }
+  }
+
+  /** A new file: nothing on disk and no open note at that path. Lexical
+      first, because even a stat of a network path reaches the server. */
+  private async isCreate(path: string): Promise<boolean> {
+    if (isNetworkPath(path, nodePath)) return false
+    const standard = nodePath.resolve(path)
+    if (await exists(standard)) return false
+    return await this.host.openBuffer(standard, false) === null
+  }
+
+  private async writeOnce(path: string, content: string): Promise<void> {
     if (Buffer.byteLength(content, 'utf8') > MAX_BYTES) throw refusal(RPC.invalidParams, 'That content is too large')
     const { resolved, virtual } = this.allowed(path)
     if (isDirectory(resolved)) throw refusal(RPC.invalidParams, 'That path is a folder')
@@ -106,15 +145,13 @@ export class AgentFileAccess {
       case 'notAbsolute': throw refusal(RPC.invalidParams, 'Paths must be absolute')
       case 'hidden': throw refusal(RPC.invalidParams, 'Hidden files and folders are off limits')
       case 'invalidName': throw refusal(RPC.invalidParams, 'That file name is not allowed')
-      case 'missingFolder': throw refusal(RPC.resourceNotFound, 'That folder does not exist')
+      case 'missingFolder':
+        // With nothing shared, a made-up folder is the same refusal. Still
+        // "not found", so a harness that reads before it creates goes on.
+        if (box.roots.length === 0) throw refusal(RPC.resourceNotFound, NO_FOLDERS_MESSAGE, [], 'noFolders')
+        throw refusal(RPC.resourceNotFound, 'That folder does not exist')
       case 'outside':
-        if (box.roots.length === 0) {
-          throw refusal(
-            RPC.invalidParams,
-            'Inkwell shares no folders with the agent yet. Ask the user to add a folder to the Inkwell library or save the note first',
-            []
-          )
-        }
+        if (box.roots.length === 0) throw refusal(RPC.invalidParams, NO_FOLDERS_MESSAGE, [], 'noFolders')
         throw refusal(RPC.invalidParams, `That path is outside the folders Inkwell shares: ${box.roots.join(', ')}`, box.roots)
     }
   }

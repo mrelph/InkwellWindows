@@ -648,6 +648,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-weight: 600;
 }
 
+.appearance-field + .appearance-field { margin-top: 12px; }
 .appearance-field select {
   width: 100%;
   min-height: 34px;
@@ -662,6 +663,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 .appearance-field select:focus-visible { border-color: var(--accent); }
+.appearance-field .segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-reader);
+  border: 1px solid var(--line-hairline);
+  border-radius: 8px;
+}
+.appearance-field .segmented button {
+  min-height: 28px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
+}
+.appearance-field .segmented button:hover { color: var(--text-primary); }
+.appearance-field .segmented button.active { color: var(--accent-contrast); background: var(--accent); }
+.appearance-field .segmented button:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 1px; }
 /* A reading font this machine does not have: listed, marked, not selectable. */
 .appearance-field select option:disabled { color: var(--text-muted); }
 

@@ -60,6 +60,10 @@ export type AgentEnvironment = {
   dismissSheets?: () => void
   /** A write landed on disk (not in an open note's buffer). */
   onFileWritten?: (path: string, created: boolean) => void
+  /** Shows the "add a notes folder" dialog with `message` and, if the user
+      agrees, adds the folder to the library and waits until main trusts it and
+      the sandbox sees it. True only when a folder is now in the library. */
+  askNotesFolder?: (message: string) => Promise<boolean>
   /** A private folder for sessions that have no library folder. */
   fallbackDirectory: () => string
   clientVersion?: string
@@ -68,6 +72,11 @@ export type AgentEnvironment = {
   prepareLaunch?: (harness: HarnessDefinition, cwd: string) => Promise<(ProcessSpec & { title?: string }) | null>
   flushMs?: number
 }
+
+export const NO_FOLDER_NOTICE =
+  "No notes folder is shared yet, so the agent can't create notes. Inkwell asks you to add one when the agent tries to save, or use Integrations ▸ Agent ▸ Add Notes Folder…."
+export const ADD_NOTES_FOLDER_MESSAGE = 'Add a notes folder for the agent?'
+export const OFFER_NOTES_FOLDER_MESSAGE = 'The agent wants to save a new note, but Inkwell has no notes folder yet.'
 
 const MAX_PROMPT_CHARS = 200_000
 const MAX_DIFF_LINES = 4000
@@ -187,7 +196,7 @@ export class AgentController {
     }
     if (client.state !== 'ready') return { ok: false, message: client.failure || 'The agent did not start.' }
     if (this.sandbox().roots.length === 0) {
-      client.addNotice("Inkwell shares no folders with the agent, so it can't create notes. Add a folder to the library (Ctrl+Shift+O).")
+      client.addNotice(NO_FOLDER_NOTICE + (this.context.activeDraft ? ' It can still edit the open unsaved note.' : ''))
     }
     return { ok: true }
   }
@@ -252,6 +261,31 @@ export class AgentController {
     this.env.dismissSheets?.()
   }
 
+  /** The library has no folders, so the agent has nowhere to save. */
+  needsNotesFolder(): boolean {
+    return this.context.roots.length === 0
+  }
+
+  /** The menu item and the panel button. Joins the sheet chain, so it never
+      opens over one of the agent's own sheets. False if the agent is off, a
+      folder is already shared, or the user declined. */
+  addNotesFolder(): Promise<boolean> {
+    return this.inChain(false, false, async () => {
+      if (!this.env.isEnabled() || !this.needsNotesFolder()) return false
+      return await this.env.askNotesFolder?.(ADD_NOTES_FOLDER_MESSAGE) ?? false
+    })
+  }
+
+  /** The agent wants to create a file and nothing is shared. Called by the
+      file layer at most once per write, in line with the other sheets, and
+      only while a prompt is running. */
+  private offerNotesFolder(): Promise<boolean> {
+    return this.inChain(false, true, async () => {
+      if (!this.needsNotesFolder()) return false
+      return await this.env.askNotesFolder?.(OFFER_NOTES_FOLDER_MESSAGE) ?? false
+    })
+  }
+
   /** The sandbox now: library folders and the open note's folder, plus the
       stand-in paths of unsaved drafts. */
   sandbox(): PathSandbox {
@@ -310,6 +344,7 @@ export class AgentController {
         return answer.open && 'applied' in answer && answer.applied
       },
       confirmWrite: (request) => this.confirmWrite(request),
+      offerNotesFolder: () => this.offerNotesFolder(),
       didWriteFile: (path, created) => this.env.onFileWritten?.(path, created)
     })
   }
@@ -334,11 +369,17 @@ export class AgentController {
   /** One sheet at a time, in the order the agent asked. A cancel drops the
       ones still waiting (they answer null). */
   private serially(body: () => Promise<string | null>): Promise<string | null> {
+    return this.inChain<string | null>(null, true, body)
+  }
+
+  /** Runs `body` after the sheets queued before it. A cancel drops it (it
+      answers `fallback`); `needsPrompt` also drops it when no prompt is running. */
+  private inChain<T>(fallback: T, needsPrompt: boolean, body: () => Promise<T>): Promise<T> {
     const asked = this.dismissals
     const run = this.sheetChain.then(async () => {
-      if (asked !== this.dismissals || this.client?.state !== 'prompting') return null
+      if (asked !== this.dismissals || (needsPrompt && this.client?.state !== 'prompting')) return fallback
       const answer = await body()
-      return asked === this.dismissals ? answer : null
+      return asked === this.dismissals ? answer : fallback
     })
     this.sheetChain = run.catch(() => undefined)
     return run

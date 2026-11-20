@@ -125,6 +125,8 @@ const FLOORS = (t: Awaited<ReturnType<ThemeModule['resolveTheme']>>, theme: Them
   selection: theme.contrastRatio(t['--selection-text'], t['--selection-bg']),
   mutedPanel: theme.contrastRatio(t['--text-muted'], t['--surface-panel']),
   mutedChrome: theme.contrastRatio(t['--text-muted'], t['--surface-chrome']),
+  mutedCanvas: theme.contrastRatio(t['--text-muted'], t['--surface-canvas']),
+  secondaryCanvas: theme.contrastRatio(t['--text-secondary'], t['--surface-canvas']),
   secondaryPanel: theme.contrastRatio(t['--text-secondary'], t['--surface-panel']),
   secondaryChrome: theme.contrastRatio(t['--text-secondary'], t['--surface-chrome'])
 })
@@ -151,6 +153,68 @@ describe('system fallback tokens (no Omarchy)', () => {
       }
     })
   }
+})
+
+describe('app themes', () => {
+  beforeEach(async () => { await loadTheme(false) })
+
+  const THEMES = ['inkwell', 'paper', 'slate', 'forest', 'midnight'] as const
+  for (const name of THEMES) {
+    for (const mode of ['light', 'dark'] as const) {
+      it(`${name} ${mode}: text, secondary and muted meet 4.5:1 on every surface`, () => {
+        const t = theme.appThemeTokens(name, mode)
+        expect(t.mode).toBe(mode)
+        const surfaces = ['--surface-reader', '--surface-panel', '--surface-canvas', '--surface-chrome', '--surface-raised', '--surface-code'] as const
+        for (const s of surfaces) {
+          expect(theme.contrastRatio(t['--text-primary'], t[s]), `text on ${s}`).toBeGreaterThanOrEqual(4.5)
+        }
+        for (const s of ['--surface-reader', '--surface-panel', '--surface-canvas', '--surface-chrome'] as const) {
+          expect(theme.contrastRatio(t['--text-secondary'], t[s]), `secondary on ${s}`).toBeGreaterThanOrEqual(4.5)
+          expect(theme.contrastRatio(t['--text-muted'], t[s]), `muted on ${s}`).toBeGreaterThanOrEqual(4.5)
+          expect(theme.contrastRatio(t['--accent'], t[s]), `accent on ${s}`).toBeGreaterThanOrEqual(3)
+        }
+        expect(theme.contrastRatio(t['--accent-contrast'], t['--accent'])).toBeGreaterThanOrEqual(4.5)
+        expect(theme.contrastRatio(t['--selection-text'], t['--selection-bg'])).toBeGreaterThanOrEqual(4.5)
+        expect(t['--surface-code']).not.toBe(t['--surface-reader'])
+      })
+    }
+  }
+
+  it('inkwell equals the original fallback palette', () => {
+    const light = theme.appThemeTokens('inkwell', 'light')
+    expect(light['--surface-reader']).toBe('#fbf8f1')
+    expect(light['--surface-chrome']).toBe('#f7f3ec')
+    expect(light['--text-primary']).toBe('#1c2b31')
+    expect(light['--accent']).toBe('#1b6366')
+    const dark = theme.appThemeTokens('inkwell', 'dark')
+    expect(dark['--surface-reader']).toBe('#171b1d')
+    expect(dark['--text-primary']).toBe('#f4eee3')
+    expect(dark['--accent']).toBe('#67b5b3')
+  })
+
+  it('the choice drives the fallback: mode forced, theme applied, bad values refused', async () => {
+    nativeTheme.shouldUseDarkColors = false
+    expect(theme.setAppearance('dark', 'paper')).toBe(true)
+    let t = await theme.resolveTheme()
+    expect(t.mode).toBe('dark')
+    expect(t['--surface-reader']).toBe('#1e1a15')
+    expect(theme.setAppearance('system', 'slate')).toBe(true)
+    t = await theme.resolveTheme()
+    expect(t.mode).toBe('light') // system follows the host
+    expect(t['--surface-reader']).toBe('#f7f9fb')
+    expect(theme.setAppearance('neon', 'paper')).toBe(false)
+    expect(theme.setAppearance('dark', 'nope')).toBe(false)
+    expect(theme.getAppearance()).toEqual({ appearance: 'system', theme: 'slate' })
+  })
+
+  it('an Omarchy theme wins over the picker', async () => {
+    await loadTheme(true)
+    await writeColors('mode = "dark"\nbackground = "#111111"\nforeground = "#eeeeee"\n', 'omarchy-x')
+    theme.setAppearance('light', 'forest')
+    const t = await theme.resolveTheme()
+    expect(t.themeName).toBe('omarchy-x')
+    expect(t.mode).toBe('dark')
+  })
 })
 
 describe('Omarchy theme resolution', () => {

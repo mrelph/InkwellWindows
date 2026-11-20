@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { decodeDocument, writeAtomically } from './fileStore'
-import { MAX_EPHY_LINKS, READER_FONT_VALUES, type EphyLink, type InkwellState, type ReaderFont, type ViewMode } from './ipc/contract'
+import { MAX_EPHY_LINKS, READER_FONT_VALUES, isAppTheme, isAppearanceMode, type EphyLink, type InkwellState, type ReaderFont, type ViewMode } from './ipc/contract'
 
 export type { InkwellState, RecentEntry, ReaderFont } from './ipc/contract'
 
@@ -16,6 +16,8 @@ const EMPTY: InkwellState = {
   readerFont: 'editorial',
   zoomLevel: 100,
   view: 'split',
+  appearance: 'system',
+  theme: 'inkwell',
   ephyLinks: {}
 }
 
@@ -97,6 +99,8 @@ const sanitize = (value: unknown): InkwellState => {
       ? Math.min(140, Math.max(80, Math.round(value.zoomLevel / 10) * 10))
       : 100,
     view: VIEWS.includes(value.view as ViewMode) ? value.view as ViewMode : 'split',
+    appearance: isAppearanceMode(value.appearance) ? value.appearance : 'system',
+    theme: isAppTheme(value.theme) ? value.theme : 'inkwell',
     ephyLinks: sanitizeEphyLinks(value.ephyLinks)
   }
 }

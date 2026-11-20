@@ -12,7 +12,8 @@ import { bindAppWindow, handle, on } from './ipcGuard'
 import { registerMenu, sendMenuCommand, whenRendererReady } from './menu'
 import { refreshNetworkDrives } from './networkDrives'
 import { onSettingChange, type Settings } from './settings'
-import { resolveTheme, watchTheme, type ThemeTokens } from './theme'
+import { getAppearance, resolveTheme, setAppearance, watchTheme, type ThemeTokens } from './theme'
+import { loadState } from './state'
 import { trustDocuments } from './trustedDocuments'
 import { hasUnsavedChanges, setUnsavedChanges } from './unsavedChanges'
 import { getAutoCheck } from './update'
@@ -43,6 +44,13 @@ const toThemePayload = (tokens: ThemeTokens) => {
 }
 
 let mainWindow: BrowserWindow | null = null
+
+/* The window background is the chrome color, so a theme or mode switch (and
+   the frame before the page paints) never flashes the old palette. */
+const paintWindow = (window: BrowserWindow, theme: ReturnType<typeof toThemePayload>) => {
+  const color = theme.colors['--surface-chrome']
+  if (color && !window.isDestroyed()) window.setBackgroundColor(color)
+}
 let stopWatchingTheme: (() => void) | null = null
 
 /* The jump list's "New note" task (menu.ts) launches Inkwell with this. */
@@ -90,7 +98,7 @@ async function createWindow() {
        moving, snapping, maximizing, and system-menu behavior all work exactly
        as users expect. */
     frame: process.platform !== 'linux',
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     backgroundColor: theme.colors['--surface-chrome'] ?? '#f7f3ec',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -165,7 +173,9 @@ async function createWindow() {
   stopWatchingTheme?.()
   stopWatchingTheme = watchTheme((tokens: ThemeTokens) => {
     if (window.isDestroyed()) return
-    window.webContents.send('theme:changed', toThemePayload(tokens))
+    const payload = toThemePayload(tokens)
+    paintWindow(window, payload)
+    window.webContents.send('theme:changed', payload)
   })
 
   /* An interrupted first navigation (ERR_ABORTED, e.g. the window closed while
@@ -209,7 +219,27 @@ if (!app.requestSingleInstanceLock()) {
        before the page can ask for anything. */
     await initialiseDocumentTrust()
 
+    /* Mode and theme from library.json, applied before the window exists. */
+    const saved = await loadState()
+    setAppearance(saved.appearance, saved.theme)
+
     handle('theme:get', async () => toThemePayload(await resolveTheme()))
+
+    /* The renderer's choice (menu, Aa panel). Validated against the enums;
+       anything else is ignored. Persistence stays the renderer's `state:save`. */
+    on('theme:set-appearance', async (_event, choice: unknown) => {
+      const { appearance, theme } = (typeof choice === 'object' && choice !== null ? choice : {}) as { appearance?: unknown; theme?: unknown }
+      const before = getAppearance()
+      if (!setAppearance(appearance, theme)) return
+      const after = getAppearance()
+      if (before.appearance === after.appearance && before.theme === after.theme) return
+      const window = mainWindow
+      if (!window || window.isDestroyed()) return
+      const payload = toThemePayload(await resolveTheme())
+      if (window.isDestroyed()) return
+      paintWindow(window, payload)
+      window.webContents.send('theme:changed', payload)
+    })
 
     on('document:set-dirty', (_event, isDirty: unknown) => {
       setUnsavedChanges(isDirty)

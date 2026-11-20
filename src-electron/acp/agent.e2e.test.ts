@@ -29,11 +29,16 @@ function setup(options: {
   args?: string[]
   answer?: (prompt: PermissionPrompt) => string | null | Promise<string | null>
   buffers?: Map<string, string>
+  /** Extra environment for the fake agent (FAKE_ACP_CREATE=1). */
+  agentEnv?: Record<string, string>
+  /** The notes-folder dialog's answer; it may add a folder to the context. */
+  askNotesFolder?: (message: string) => boolean | Promise<boolean>
 }) {
   const events: AgentEvent[] = []
   const prompts: PermissionPrompt[] = []
   const bufferQueries: BufferQuery[] = []
   const written: { path: string; created: boolean }[] = []
+  const offers: string[] = []
   const buffers = options.buffers ?? new Map<string, string>()
   const env: AgentEnvironment = {
     isEnabled: () => options.enabled ?? true,
@@ -53,6 +58,7 @@ function setup(options: {
       return { open: true, applied: true }
     },
     onFileWritten: (path, created) => written.push({ path, created }),
+    ...(options.askNotesFolder ? { askNotesFolder: async (message: string) => { offers.push(message); return options.askNotesFolder!(message) } } : {}),
     fallbackDirectory: () => nodePath.join(base, 'fallback'),
     home: nodePath.join(base, 'no-such-home'),
     flushMs: 5,
@@ -60,12 +66,13 @@ function setup(options: {
       const environment: Record<string, string> = { ...(process.env as Record<string, string>) }
       if (options.log) environment.FAKE_ACP_LOG = options.log
       if (options.target) environment.FAKE_ACP_TARGET = options.target
+      Object.assign(environment, options.agentEnv)
       return { command: process.execPath, args: [fakeAgent, ...(options.args ?? [])], cwd, env: environment, title: 'Fake' }
     }
   }
   const controller = new AgentController(env)
   controller.setContext({ roots: [options.root] })
-  return { controller, events, prompts, bufferQueries, buffers, written }
+  return { controller, events, prompts, bufferQueries, buffers, written, offers }
 }
 
 const entries = (h: Harness): AgentTranscriptEntry[] => h.controller.session?.transcript.entries.slice() ?? []
@@ -305,12 +312,75 @@ describe('agent end to end, against the fake agent', () => {
     expect(off.controller.state()).toEqual({ state: 'disabled' })
   })
 
-  it('says so when no folder is shared', async () => {
+  it('says so when no folder is shared, and mentions the open unsaved note when there is one', async () => {
     const h = setup({ root: folder() })
     h.controller.setContext({ roots: [] })
     await h.controller.newSession()
-    expect(entries(h).some((e) => e.kind === 'status' && e.text.startsWith('Inkwell shares no folders'))).toBe(true)
+    const notice = entries(h).find((e) => e.kind === 'status' && e.text.startsWith('No notes folder is shared yet'))
+    expect(notice?.text).toContain('Integrations ▸ Agent ▸ Add Notes Folder…')
+    expect(notice?.text).not.toContain('unsaved')
     await h.controller.stop()
+
+    const draft = setup({ root: folder() })
+    draft.controller.setContext({ roots: [], activeDraft: true })
+    await draft.controller.newSession()
+    expect(entries(draft).some((e) => e.kind === 'status' && e.text.endsWith(' It can still edit the open unsaved note.'))).toBe(true)
+    await draft.controller.stop()
+  })
+
+  it('issue #29: a new note with no folder offers one, then writes through Allow Once', async () => {
+    const home = folder()
+    const notes = nodePath.join(home, 'Documents', 'Inkwell')
+    const target = nodePath.join(notes, 'Fresh.md')
+    const h = setup({
+      root: '',
+      target,
+      agentEnv: { FAKE_ACP_CREATE: '1' },
+      askNotesFolder: () => {
+        mkdirSync(notes, { recursive: true })
+        h.controller.setContext({ roots: [canonical(notes) as string] })
+        return true
+      }
+    })
+    h.controller.setContext({ roots: [] })
+    await h.controller.newSession()
+    await h.controller.prompt({ text: 'Make a note', includeNote: false })
+    expect(h.offers).toEqual(['The agent wants to save a new note, but Inkwell has no notes folder yet.'])
+    expect(h.prompts.map((p) => p.kind)).toEqual(['tool', 'write'])
+    expect(h.prompts[1].detail).toBe('This creates a new file on disk.')
+    expect(readFileSync(target, 'utf8')).toBe('\nSummary: added by the fake agent.\n')
+    expect(h.written).toHaveLength(1)
+    expect(h.written[0].created).toBe(true)
+    await h.controller.stop()
+  })
+
+  it('issue #29: Not Now refuses the write, nothing is made, and the agent is told not to guess', async () => {
+    const home = folder()
+    const target = nodePath.join(home, 'Documents', 'Inkwell', 'Fresh.md')
+    const h = setup({ root: '', target, agentEnv: { FAKE_ACP_CREATE: '1' }, askNotesFolder: () => false })
+    h.controller.setContext({ roots: [] })
+    await h.controller.newSession()
+    await h.controller.prompt({ text: 'Make a note', includeNote: false })
+    expect(h.offers).toHaveLength(1)
+    expect(h.prompts.map((p) => p.kind)).toEqual(['tool']) // never a write sheet
+    expect(existsSync(nodePath.join(home, 'Documents'))).toBe(false)
+    expect(entries(h).find((e) => e.kind === 'toolCall')?.tool).toMatchObject({ status: 'failed', refusedBy: 'Inkwell' })
+    await h.controller.stop()
+  })
+
+  it('issue #29: the menu and panel action only asks while the agent is on and no folder is shared', async () => {
+    const root = folder()
+    const asked: string[] = []
+    const h = setup({ root: '', askNotesFolder: (message) => { asked.push(message); return true } })
+    h.controller.setContext({ roots: [] })
+    expect(await h.controller.addNotesFolder()).toBe(true)
+    expect(asked).toEqual(['Add a notes folder for the agent?'])
+    h.controller.setContext({ roots: [root] })
+    expect(await h.controller.addNotesFolder()).toBe(false)
+    expect(asked).toHaveLength(1)
+    const off = setup({ root: '', enabled: false, askNotesFolder: () => { throw new Error('agent is off') } })
+    off.controller.setContext({ roots: [] })
+    expect(await off.controller.addNotesFolder()).toBe(false)
   })
 
   it.skipIf(process.platform !== 'win32')('starts a harness through an npm-style .cmd shim', async () => {

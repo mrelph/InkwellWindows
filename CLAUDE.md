@@ -99,8 +99,10 @@ checked by `trustedDocuments.ts`, LEXICALLY, before any fs call:
   Recent files / last note library.json held at startup, reader-link targets
   (`document:open-link`, resolved by main in `readerLinks.ts` against a note
   it vouched for), and Markdown lexically inside a library folder.
-- **Library folders**: only from the Add Folder dialog (trusted in memory the
-  moment it returns) or library.json as main loaded it at startup. Drive
+- **Library folders**: only from the Add Folder dialog or the agent's
+  notes-folder offer (both through `trustAndReadLibraryFolder`, trusted in
+  memory the moment main has the folder; main then asks the renderer to adopt
+  it over `library:adopt-folder`, whose reply grants nothing) or library.json as main loaded it at startup. Drive
   roots, the home folder and folders holding it are refused. `state:save` can
   drop a folder, never add one; `document:read-folder` reads only these.
 - **Integrations**: the agent and Ephy enable toggles are main-only (the
@@ -184,7 +186,7 @@ the newest window on later calls:
   for the renderer, and `menu.ts` rebuilds. Never mirror one of these toggles
   in the renderer by polling or on focus.
 - `menu.ts` — the application menu (File / Edit / View / Integrations / Help),
-  hidden until Alt. Built from the `MenuState` the renderer pushes on
+  always visible, like the Mac menu bar. Built from the `MenuState` the renderer pushes on
   `menu:state` (including the Reading Font list from `src/fonts/readerFonts.ts`
   with "(not installed)" marks) and from settings. Clicks go back as
   `menu:command`. Accelerators are display-only (`registerAccelerator: false`):

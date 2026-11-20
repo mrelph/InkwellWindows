@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, ChevronDown, MessageSquarePlus, Send, Square, X } from 'lucide-react'
+import { Bot, ChevronDown, FolderPlus, MessageSquarePlus, Send, Square, X } from 'lucide-react'
 import type {
   AgentBufferRequest,
   AgentHarnessId,
@@ -66,7 +66,7 @@ function statusLine(state: AgentSessionState): string {
 export function AgentPanel({ open, onClose }: AgentPanelProps) {
   const agent = window.inkwell?.agent
   const { doc } = useActiveDocument()
-  const { documents, applyEditTo, setAgentOpen, agentEnabled } = useIntegrations()
+  const { documents, folders, applyEditTo, setAgentOpen, agentEnabled } = useIntegrations()
 
   const [state, setState] = useState<AgentSessionState>({ state: 'stopped' })
   const [entries, setEntries] = useState<AgentTranscriptEntry[]>([])
@@ -300,6 +300,11 @@ export function AgentPanel({ open, onClose }: AgentPanelProps) {
         )}
         <span className="agent-status">{state.state === 'failed' ? 'Not connected' : statusLine(state)}</span>
       </div>
+      {folders.length === 0 && (
+        <button className="icon-button" aria-label="Add Notes Folder…" title="Add Notes Folder…" disabled={!enabled} onClick={() => void agent.addNotesFolder()}>
+          <FolderPlus size={16} />
+        </button>
+      )}
       <button className="icon-button" aria-label="New agent session" title="New agent session" disabled={!enabled || state.state === 'starting'} onClick={() => void agent.newSession()}>
         <MessageSquarePlus size={16} />
       </button>

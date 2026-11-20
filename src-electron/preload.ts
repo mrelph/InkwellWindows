@@ -9,6 +9,7 @@ import type {
   AgentPermissionResponse,
   AgentPromptPayload,
   InkwellBridge,
+  LibraryAdoptResponse,
   LinkOpenRequest,
   InkwellState,
   MenuState,
@@ -51,6 +52,7 @@ const bridge = {
   confirmDiscard: (names: string) => ipcRenderer.invoke('document:confirm-discard', names),
   getTheme: () => ipcRenderer.invoke('theme:get'),
   onThemeChange: (listener) => subscribe('theme:changed', listener),
+  setAppearance: (choice) => ipcRenderer.send('theme:set-appearance', choice),
   onOpenExternal: (listener) => subscribe('document:opened-externally', listener),
 
   menu: {
@@ -98,7 +100,13 @@ const bridge = {
     respondPermission: (response: AgentPermissionResponse) => ipcRenderer.send('agent:permission-response', response),
     onBufferRequest: (listener) => subscribe('agent:buffer-request', listener),
     respondBuffer: (response: AgentBufferResponse) => ipcRenderer.send('agent:buffer-response', response),
-    onFileWritten: (listener) => subscribe('agent:file-written', listener)
+    onFileWritten: (listener) => subscribe('agent:file-written', listener),
+    addNotesFolder: () => ipcRenderer.invoke('agent:add-notes-folder')
+  },
+
+  library: {
+    onAdoptFolder: (listener) => subscribe('library:adopt-folder', listener),
+    respondAdoptFolder: (response: LibraryAdoptResponse) => ipcRenderer.send('library:adopt-folder-result', response)
   },
 
   ephy: {

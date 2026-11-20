@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import os from 'node:os'
 import nodePath from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { AgentFileAccess, slice, type FileAccessHost, type WriteRequest } from './fileAccess'
+import { AgentFileAccess, isNoFolders, slice, type FileAccessHost, type WriteRequest } from './fileAccess'
+import { createNotesFolder, defaultNotesFolderPath } from './notesFolder'
 import { RPC, RPCError } from './jsonrpc'
 import { canonical, PathSandbox } from './pathSandbox'
 import { safestOption } from './client'
@@ -120,8 +121,10 @@ describe('AgentFileAccess', () => {
   it('with no shared folders it says so and never asks', async () => {
     const { files, calls } = access('', { roots: [] })
     const error = await rejection(files.write(nodePath.join(base, 'Ideas.md'), '# Ideas'))
-    expect(error.message.startsWith('Inkwell shares no folders with the agent')).toBe(true)
-    expect(error.data).toMatchObject({ refusedBy: 'inkwell' })
+    expect(error.message.startsWith('No notes folder is shared yet')).toBe(true)
+    expect(error.message).toContain('Do not invent a path')
+    expect(error.data).toMatchObject({ refusedBy: 'inkwell', reason: 'noFolders' })
+    expect(isNoFolders(error)).toBe(true)
     expect(calls.confirms).toEqual([])
   })
 
@@ -181,5 +184,121 @@ describe('slice and permission helpers', () => {
     ]
     expect(safestOption(options)?.optionId).toBe('r')
     expect(safestOption([options[0]])).toBeUndefined()
+  })
+})
+
+/* Issue #29: offer a notes folder when the agent has nowhere to save. A fake
+   library whose folders the offer can fill, like "Create" does. */
+describe('notes folder offer (issue #29)', () => {
+  type Library = { roots: string[]; offers: string[]; confirms: string[] }
+
+  function offering(library: Library, options: { buffers?: Record<string, string>; offer: (library: Library) => boolean }) {
+    const buffers = new Map(Object.entries(options.buffers ?? {}).map(([path, text]) => [canonical(path) ?? path, text]))
+    return new AgentFileAccess({
+      sandbox: () => new PathSandbox(library.roots, nowhere),
+      openBuffer: async (path) => buffers.get(path) ?? null,
+      applyToBuffer: async () => true,
+      confirmWrite: async (request) => { library.confirms.push(request.path); return true },
+      offerNotesFolder: async (path) => { library.offers.push(path); return options.offer(library) }
+    })
+  }
+  const emptyLibrary = (): Library => ({ roots: [], offers: [], confirms: [] })
+
+  it('no folders and a create: offers, then retries once through the confirm', async () => {
+    const home = folder() // a fake documents folder, never the real one
+    const target = defaultNotesFolderPath(nodePath.join(home, 'Documents'))
+    const library = emptyLibrary()
+    const files = offering(library, {
+      offer: (lib) => {
+        const real = createNotesFolder(target)
+        if (!real) return false
+        lib.roots = [real]
+        return true
+      }
+    })
+    await files.write(nodePath.join(target, 'Ideas.md'), '# Ideas')
+    expect(library.offers).toHaveLength(1)
+    expect(library.confirms).toHaveLength(1) // the retry still asks Allow Once
+    expect(readFileSync(nodePath.join(target, 'Ideas.md'), 'utf8')).toBe('# Ideas')
+  })
+
+  it('a missing folder under a made-up path is the same offer, and a retry never offers again', async () => {
+    const home = folder()
+    const library = emptyLibrary()
+    // The folder is added, but the agent's path is still outside it.
+    const files = offering(library, {
+      offer: (lib) => {
+        lib.roots = [createNotesFolder(defaultNotesFolderPath(nodePath.join(home, 'Documents'))) as string]
+        return true
+      }
+    })
+    const error = await rejection(files.write(nodePath.join(folder(), 'nested', 'Ideas.md'), 'x'))
+    expect(isNoFolders(error)).toBe(false) // the retry's refusal names the shared folders instead
+    expect(library.offers).toHaveLength(1)
+    expect(library.confirms).toEqual([])
+  })
+
+  it('with a folder shared it never offers', async () => {
+    const root = folder()
+    const library: Library = { roots: [root], offers: [], confirms: [] }
+    const files = offering(library, { offer: () => { throw new Error('no offer with a folder') } })
+    await files.write(nodePath.join(root, 'a.md'), 'a')
+    await rejection(files.write(nodePath.join(folder(), 'b.md'), 'b'))
+    expect(library.offers).toEqual([])
+  })
+
+  it('Not Now refuses with the declined message and writes nothing', async () => {
+    const home = folder()
+    const target = defaultNotesFolderPath(nodePath.join(home, 'Documents'))
+    const library = emptyLibrary()
+    const files = offering(library, { offer: () => false })
+    const error = await rejection(files.write(nodePath.join(target, 'Ideas.md'), '# Ideas'))
+    expect(isNoFolders(error)).toBe(true)
+    expect(error.message).toContain('chose not to add one')
+    expect(library.offers).toHaveLength(1)
+    expect(library.confirms).toEqual([])
+    expect(existsSync(target)).toBe(false)
+  })
+
+  it('edits to an existing file or an open note never offer', async () => {
+    const elsewhere = folder()
+    writeFileSync(nodePath.join(elsewhere, 'old.md'), 'old')
+    const openPath = nodePath.join(folder(), 'open.md')
+    const library = emptyLibrary()
+    const files = offering(library, { buffers: { [openPath]: 'open' }, offer: () => { throw new Error('edits never offer') } })
+    expect(isNoFolders(await rejection(files.write(nodePath.join(elsewhere, 'old.md'), 'new')))).toBe(true)
+    // An open note's buffer is keyed by its real path; its folder exists, so
+    // the refusal is plain "outside" and nothing is offered either way.
+    await rejection(files.write(openPath, 'new'))
+    expect(library.offers).toEqual([])
+  })
+
+  it('a network path is not a create, so it never offers and is never touched', async () => {
+    const library = emptyLibrary()
+    const files = offering(library, { offer: () => { throw new Error('no offer for a network path') } })
+    const error = await rejection(files.write(String.raw`\\attacker\share\Ideas.md`, 'x'))
+    if (process.platform === 'win32') expect(isNoFolders(error)).toBe(true)
+    expect(library.offers).toEqual([])
+  })
+})
+
+describe('notes folder helper', () => {
+  it('names Documents\Inkwell, makes it once and keeps an existing one', () => {
+    const home = folder()
+    const target = defaultNotesFolderPath(nodePath.join(home, 'Documents'))
+    expect(nodePath.basename(target)).toBe('Inkwell')
+    expect(nodePath.basename(nodePath.dirname(target))).toBe('Documents')
+    const made = createNotesFolder(target)
+    expect(made).not.toBeNull()
+    writeFileSync(nodePath.join(target, 'keep.md'), 'keep')
+    expect(createNotesFolder(target)).toBe(made)
+    expect(existsSync(nodePath.join(target, 'keep.md'))).toBe(true)
+    writeFileSync(nodePath.join(home, 'blocked'), 'a file')
+    expect(createNotesFolder(nodePath.join(home, 'blocked'))).toBeNull() // a file in the way
+  })
+
+  it('refuses a network path without touching it', () => {
+    if (process.platform !== 'win32') return
+    expect(createNotesFolder(String.raw`\\attacker\share\Inkwell`)).toBeNull()
   })
 })
