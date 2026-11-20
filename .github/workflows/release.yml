@@ -61,17 +61,19 @@ jobs:
       #     WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
       #     WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
+      # --publish never: the tag makes electron-builder try to publish itself;
+      # the release is created by the last step instead.
       - name: Package x64 installer
         shell: pwsh
-        run: corepack pnpm package:windows
+        run: corepack pnpm package:windows --publish never
 
       - name: Package arm64 installer
         shell: pwsh
-        run: corepack pnpm package:windows:arm64
+        run: corepack pnpm package:windows:arm64 --publish never
 
       - name: Package x64 portable
         shell: pwsh
-        run: corepack pnpm package:windows:portable
+        run: corepack pnpm package:windows:portable --publish never
 
       - name: Checksums
         shell: pwsh
