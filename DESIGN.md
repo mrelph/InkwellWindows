@@ -13,7 +13,7 @@ colors:
 typography:
   display:
     fontFamily: "Source Serif 4, Georgia, serif"
-    fontSize: "clamp(38px, 4vw, 56px)"
+    fontSize: "clamp(32px, 4vw, 56px)"
     fontWeight: 600
     lineHeight: 1.08
     letterSpacing: "-0.035em"
@@ -66,7 +66,7 @@ components:
 
 Inkwell turns Markdown into a place for sustained reading and deliberate revision. The interface is a small worktable: a warm, softly layered frame holds a generous paper reading surface, with the source close at hand rather than hidden behind an application mode. It should feel considered and humane, never like a dashboard, browser tab, or generic code editor.
 
-The visual hierarchy belongs to the document. A blue-black title bar, restrained navigation, and quiet utility panels establish location without competing with the page. Coral marks document identity, amber invites a new note, and teal is reserved for saved or selected action. The reading pane gets the largest type, calmest surface, and longest measure.
+The visual hierarchy belongs to the document. Restrained navigation and quiet utility panels establish location without competing with the page. Coral marks document identity, amber invites a new note, and teal is reserved for saved or selected action. The reading pane gets the largest type, calmest surface, and longest measure.
 
 **Key Characteristics:**
 
@@ -85,11 +85,13 @@ The palette is a material system: dark ink and warm paper make the workspace fee
 
 ### Secondary
 
-- **Note Amber:** Used for the New note action and a small amount of warm emphasis; it should read as an invitation, not a general-purpose highlight.
+- **Note Amber:** Used for the New note action only; it should read as an invitation, not a general-purpose highlight. It always carries fixed dark ink, in light and dark themes alike.
 
 ### Tertiary
 
-- **Document Coral:** Marks file identity, editor accents, and the app mark. It is a navigation cue, not a page background.
+- **Document Coral:** Marks document identity: the header's document badge, the active library row's file icon, and the unsaved-changes dot. It is a navigation cue, not a page background and not an action color. (The editor caret follows the theme accent.)
+
+Teal is the theme's accent and changes with the theme; amber and coral are fixed identity colors. THEMING.md, "Identity accents", holds their tokens, the contrast-safe coral used for glyphs, and the rule that the literals live only in `:root`.
 
 ### Neutral
 
@@ -113,19 +115,26 @@ The palette is a material system: dark ink and warm paper make the workspace fee
 
 ### Hierarchy
 
-- **Display:** The document’s first heading is expansive, tightly tracked, and editorial; it owns the reader’s first glance.
-- **Headline:** Reader section headings are serif, strong, and calmer than the first heading.
+- **Display:** The document’s first heading is expansive, tightly tracked (−0.035em), and editorial, weight 600, `clamp(32px, 4vw, 56px)` capped at a 20ch measure; it owns the reader’s first glance. The variable serif’s optical size follows the rendered size.
+- **Headline:** Second-level headings are serif at 600, strong, and calmer than the first heading.
+- **Section labels:** Third-level headings are uppercase Manrope at 790 in ink; fourth to sixth are the same label at 760 in the secondary ink. They stay Manrope whatever reading font is chosen, as do tables; code stays monospace.
 - **Title:** Document and navigation titles use compact Manrope at a heavier weight for scanning.
 - **Body:** Long-form reading uses the serif body face at a generous measure; utility text uses Manrope at a smaller, denser scale.
 - **Label:** Small chrome labels are semibold to bold Manrope, sometimes with modest uppercase tracking for library metadata.
 
 **The Document Leads Rule.** The reader’s serif hierarchy is always visually stronger than the application’s UI labels.
 
+### Reading fonts
+
+Appearance offers ten reading fonts, in this order: Default (Source Serif 4), Bookerly, Ember Modern, Roboto, Ubuntu, Geist Mono, then Classic serif (Georgia), Rounded sans (Manrope), System sans, Monospace. The first is bundled; the next five are used only when installed on the machine and are otherwise listed greyed as “(not installed)”, drawing as the default while the choice is kept. Ember Modern sets h1 and h2 in its Display cut at −0.01em.
+
 ## Layout
 
 The desktop shell is a three-region worktable: a persistent document library, a central workspace, and an outline. The central workspace holds its own document header, canvas, and slim status bar. The split canvas gives reader and source equal responsibility, divided by a single warm rule rather than container cards.
 
-Use a compact outer chrome and an expansive inner page. At full width, the library and outline stay narrow while the central document remains fluid. At the compact desktop breakpoint, the outline becomes a state-driven overlay with its own close control; it must never become a visible-but-inert affordance. At smaller widths, the library can be toggled and the split view prioritizes reading.
+Use a compact outer chrome and an expansive inner page. At full width, the library and outline stay narrow while the central document remains fluid. Breakpoints compare against the layout width: the window, at the current zoom, less a docked agent panel. At 1120px and below the outline becomes a state-driven overlay with its own close control; it must never become a visible-but-inert affordance. At 820px and below the library folds and a split draws the reader alone (the editor in focus mode). Panels the app folded come back when room returns; a panel closed by hand stays closed.
+
+The document header never clips or wraps. As it runs out of room it steps down one stage at a time, least important first: view labels become icons, Save drops its shortcut hint, Save as becomes an icon, the status line goes (and the title may take two lines), Appearance and Focus move into a ⋯ menu, then the document badge goes while the view switcher becomes one menu and Save as joins the ⋯ menu, and last Save becomes an icon. The library and outline toggles are never moved into the menu.
 
 Spacing groups controls tightly and gives content noticeably more room above a heading than below it. The status bar remains thin, quiet, and anchored to the workspace bottom.
 
@@ -150,8 +159,8 @@ Forms are gently curved and precise. Small code fragments use the smallest radiu
 ### Buttons
 
 - **Primary Save:** Teal with paper text, a compact rounded corner, and a soft functional lift. Hover slightly deepens the teal and raises the control by one pixel.
-- **New Note:** Amber with dark ink, a visible warm border, and the same compact control height as Save. It is the sole amber call-to-action.
-- **Save As:** An outlined, paper-adjacent secondary action. Keep it close to Save and hide it only where the compact desktop overlay would obstruct it; the keyboard shortcut remains available.
+- **New Note:** Amber with dark ink, a warm coral-tinted border, and the same compact control height as Save. It is the sole amber call-to-action.
+- **Save As:** A quiet, paper-adjacent secondary action in the secondary ink with a hairline border. Keep it close to Save; when the header is tight it becomes an icon and then an item in the ⋯ menu, never simply hidden.
 - **Icon Buttons:** Thin-line icons in a square control with a quiet rounded hover surface. Every icon-only action has an accessible label.
 
 ### Inputs / Fields
@@ -168,7 +177,9 @@ Forms are gently curved and precise. Small code fragments use the smallest radiu
 ### Reader Surface
 
 - **Reading Pane:** A clean paper field with a centered long-form measure, serif hierarchy, warm rules, quiet tables, and teal-linked text.
-- **Callout:** Pale teal paper with a fine teal border and broad compact corner; use for information that deserves a pause, not for every aside.
+- **Callout:** Accent-tinted paper with a fine accent border and broad corner, at the body size; use for information that deserves a pause, not for every aside.
+- **Code block:** A card on the code surface with a hairline border and broad corners; a small uppercase label names the language, and long lines scroll inside the card.
+- **Empty canvas:** One quiet line in the reading font, “Open a note, add a folder, or start writing.”, above the quiet-button ways to start. The buttons sit in a row while they fit and stack at one width when they do not.
 
 ## Do's and Don'ts
 

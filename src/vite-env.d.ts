@@ -1,73 +1,31 @@
 /// <reference types="vite/client" />
 
+/* The renderer's view of the IPC contract. The shapes live in ONE place,
+   src-electron/ipc/contract.ts, which the preload also type-checks against
+   (`satisfies InkwellBridge`). These globals keep the renderer's existing
+   ambient names working. */
+import type * as Contract from '../src-electron/ipc/contract'
+
 declare global {
-  type DocumentFile = { name: string; path: string; content: string; savedAt: number }
-
-  type RecentEntry = { path: string; name: string; openedAt: number }
-
-  type ReaderFont = 'editorial' | 'classic' | 'sans' | 'system' | 'mono'
-
+  type DocumentFile = Contract.DocumentFile
+  type RecentEntry = Contract.RecentEntry
+  type ReaderFont = Contract.ReaderFont
+  type ViewMode = Contract.ViewMode
+  type EphyLink = Contract.EphyLink
   /** The remembered library: folder sources, recent files, and where you were. */
-  type InkwellState = {
-    folders: string[]
-    recent: RecentEntry[]
-    activePath?: string
-    introDone: boolean
-    readerFont: ReaderFont
-    zoomLevel: number
-  }
-
-  /** A newer tag exists on GitHub. Null everywhere else — see src-electron/update.ts. */
-  type UpdateNotice = { version: string; url: string }
-
-  type RenameResult =
-    | { ok: true; path: string; name: string; savedAt?: number }
-    | { ok: false; reason: string }
-
-  type ThemePayload = {
-    name: string
-    mode: 'light' | 'dark'
-    colors: Record<string, string>
-  }
+  type InkwellState = Contract.InkwellState
+  /** A newer GitHub Release exists. Null everywhere else — see src-electron/update.ts. */
+  type UpdateNotice = Contract.UpdateNotice
+  type RenameResult = Contract.RenameResult
+  type ThemePayload = Contract.ThemePayload
+  type CommandId = Contract.CommandId
+  type MenuState = Contract.MenuState
+  type InkwellBridge = Contract.InkwellBridge
 
   interface Window {
-    inkwell?: {
-      platform: NodeJS.Platform
-      openDocuments: () => Promise<DocumentFile[]>
-      openFolder: () => Promise<{ folder: string; documents: DocumentFile[] }>
-      /** Re-reads a folder Inkwell already knows about — no dialog. */
-      readFolder: (folder: string) => Promise<{ folder: string; documents: DocumentFile[] }>
-      /** Reads recent files back in, which the library holds only as paths. */
-      readDocuments: (paths: string[]) => Promise<DocumentFile[]>
-      loadState: () => Promise<InkwellState>
-      saveState: (state: InkwellState) => void
-      /** Zooms the complete Electron renderer, including chrome and document. */
-      setZoomLevel: (percent: number) => void
-      renameDocument: (payload: { path: string; name: string }) => Promise<RenameResult>
-      duplicateDocument: (filePath: string) => Promise<DocumentFile | null>
-      /** Moves the file to the desktop trash. Never an unlink. */
-      trashDocument: (filePath: string) => Promise<boolean>
-      confirmTrash: (name: string) => Promise<boolean>
-      revealDocument: (filePath: string) => void
-      copyText: (text: string) => void
-      /** The last known update, from cache. Null when there is nothing to say. */
-      getUpdate: () => Promise<UpdateNotice | null>
-      /** Silences this version; anything newer speaks up again. */
-      dismissUpdate: (version: string) => void
-      /** Opens the tag page for the known update in the desktop browser. */
-      openUpdate: () => void
-      onUpdateAvailable: (listener: (notice: UpdateNotice) => void) => () => void
-      saveDocument: (payload: { content: string; path?: string; forceSaveAs?: boolean; knownMtime?: number }) => Promise<{ canceled: boolean; path?: string; savedAt?: number }>
-      setDirty: (isDirty: boolean) => void
-      /** Resolves the active Omarchy theme, or the host system palette. */
-      getTheme: () => Promise<ThemePayload>
-      /** Subscribes to theme switches; returns an unsubscribe function. */
-      onThemeChange: (listener: (theme: ThemePayload) => void) => () => void
-      /** Native confirm before discarding unsaved work. True means discard. */
-      confirmDiscard: (names: string) => Promise<boolean>
-      /** Files passed on argv or opened while the app was already running. */
-      onOpenExternal: (listener: (documents: DocumentFile[]) => void) => () => void
-    }
+    /** Undefined outside Electron (e.g. `vite` in a plain browser): file
+        operations then no-op. */
+    inkwell?: InkwellBridge
   }
 }
 

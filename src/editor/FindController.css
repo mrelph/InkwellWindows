@@ -1,0 +1,56 @@
+/* The find / replace bar. Colors come from the theme tokens only. */
+.find-bar {
+  position: fixed;
+  top: calc(var(--header-h) + 10px);
+  right: 22px;
+  z-index: 40;
+  display: grid;
+  gap: 6px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 8px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  font-family: 'Manrope Variable', sans-serif;
+  font-size: 12px;
+}
+
+.find-row { display: flex; align-items: center; gap: 4px; }
+
+.find-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--text-primary);
+  background: var(--surface-reader);
+  border: 1px solid var(--line-hairline);
+  border-radius: 6px;
+  outline: none;
+}
+.find-input:focus { border-color: var(--accent-ring); }
+
+.find-count { min-width: 58px; color: var(--text-muted); font-size: 11px; text-align: right; white-space: nowrap; }
+
+.find-button, .find-text-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.find-button { width: 26px; height: 26px; }
+.find-text-button { height: 26px; padding: 0 10px; border: 1px solid var(--line-hairline); font-size: 11px; font-weight: 600; }
+.find-button:hover:not(:disabled), .find-text-button:hover:not(:disabled) { background: var(--accent-tint); }
+.find-button:disabled, .find-text-button:disabled { opacity: .4; cursor: default; }
+.find-button.is-active { color: var(--accent-contrast); background: var(--accent); }
+.find-toggle svg { transition: transform .12s ease; }
+.find-toggle.is-open svg { transform: rotate(90deg); }
+
+/* Matches in the rendered reader (CSS Custom Highlight API). */
+::highlight(inkwell-find) { background-color: var(--selection-bg); color: var(--selection-text); }
+::highlight(inkwell-find-current) { background-color: var(--caret); color: var(--text-inverse); }

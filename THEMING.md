@@ -12,10 +12,17 @@ editorial typography, its generous reading measure, tonal surface layering, and
 hairline rules — not in specific hex values. A theme change repaints Inkwell; it
 never restructures it.
 
-Mode is **full theme-follow**: one accent color does all accent work. Hierarchy
-between actions is expressed through *treatment* (filled / tinted / ghost), never
-through inventing a second hue. This is DESIGN.md's Accent Rarity Rule taken to
-its logical end: one action color, one job at a time.
+Mode is **theme-follow for action color**: one theme accent (`--accent`) does all
+*action* work — Save, selection, links, focus. Hierarchy between actions is
+expressed through *treatment* (filled / tinted / ghost), never through a second
+action hue. This is DESIGN.md's Accent Rarity Rule: one action color, one job at
+a time.
+
+Beside it sit DESIGN.md's two **identity accents**, which are brand constants
+rather than theme colors and are never used for actions in general: **amber**
+is the New note invitation and **coral** marks document identity. They match
+Inkwell for Mac (`Palette.amber` / `Palette.coral`). See "Identity accents"
+below for their tokens and the only places they may appear.
 
 ## Source of truth
 
@@ -91,7 +98,8 @@ the nearest surface toward or away from the foreground in small perceptual steps
 ## Token vocabulary
 
 All tokens are CSS custom properties on `:root`. `styles.css` must reference only
-these — no raw hex literals.
+these — no raw color literals anywhere below the `:root` block, in it or in any
+co-located stylesheet.
 
 **Surfaces**
 
@@ -114,7 +122,7 @@ these — no raw hex literals.
 - `--line-hairline` — warm rule separating regions
 - `--line-strong` — border of an active or selected item
 
-**Accent (single hue)**
+**Accent (the single action hue, theme-derived)**
 
 - `--accent` — the one action color
 - `--accent-hover` — one perceptual step from `--accent`
@@ -122,10 +130,43 @@ these — no raw hex literals.
 - `--accent-tint` — low-alpha accent for callouts and selected backgrounds
 - `--accent-ring` — focus ring
 
+**Identity accents (fixed, not theme-derived)**
+
+- `--identity-amber` (`#f2b86f`) — fill of the New note button. Nothing else.
+- `--identity-amber-ink` (`#1c2b31`) — text and icon on that fill. A fixed ink,
+  deliberately *not* `--text-primary`: the pair is about 8:1 in both modes,
+  whereas theme text turns light in a dark theme and would vanish on amber.
+- `--identity-coral` (`#e56d40`) — document identity. Used raw only for tints
+  and borders: the header's document badge (12% fill, 30% border) and the New
+  note button's edge (35%).
+- `--identity-coral-ink` — coral for anything read against a surface: the badge
+  glyph, the active row's file icon, the unsaved dot. Derived, not a literal:
+  `color-mix(in srgb, var(--identity-coral) 80%, var(--text-primary))`. Leaning
+  toward the theme's text color darkens it on light surfaces and lightens it on
+  dark ones, so one definition is the contrast-safe variant for both modes
+  (about 3.3:1 on the light panel and 5.8:1 on the dark panel, where raw coral
+  on the light panel is only 2.5:1).
+
+The three hex literals are written in exactly one place, the `:root` block of
+`styles.css`. They are not in `ThemePayload`, so theme injection never replaces
+them and an Omarchy theme does not recolor them. If a future theme needs to
+(a theme whose surfaces fight amber, say), add them to the token derivation in
+`src-electron/theme.ts` with the same contrast floors rather than writing a
+second literal in CSS.
+
+Everything else that is accent-colored stays `--accent`. In particular the Ephy
+badge and Ephy group label are teal, not coral, as on Mac.
+
 **Editor**
 
 - `--caret` — text caret, `--accent`
 - `--selection-bg`, `--selection-text`
+
+**Elevation**
+
+- `--shadow-overlay` — the ambient edge under a panel that overlays the canvas
+  (compact outline, undocked agent panel). Fixed; the one shadow that is not
+  mixed from a theme token, because a shadow has to stay dark in a dark theme.
 
 ## Contrast enforcement
 
